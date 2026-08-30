@@ -1,6 +1,6 @@
 /**
  * ==========================================================================
- * firebase.js - محرك الاتصال بـ Firebase والمزامنة السحابية الفورية بين الأجهزة
+ * firebase.js - محرك الاتصال بـ Firebase، الترحيل السحابي التلقائي، والمزامنة الحية
  * دار المُهتدية النسائية — جامع الهدى
  * ==========================================================================
  */
@@ -83,7 +83,7 @@ function initFirebaseApp() {
   loadInitialData();
 }
 
-// تحميل البيانات وربط المزامنة الفورية
+// تحميل البيانات وربط المزامنة الفورية وترحيل البيانات للسحابة
 function loadInitialData() {
   const localData = localStorage.getItem(STORAGE_KEY);
   if (localData) {
@@ -99,28 +99,36 @@ function loadInitialData() {
   }
 
   // ضمان سلامة المصفوفات
-  if (!Array.isArray(window.appStore.users)) window.appStore.users = [];
-  if (!Array.isArray(window.appStore.students)) window.appStore.students = [];
-  if (!Array.isArray(window.appStore.teachers)) window.appStore.teachers = [];
-  if (!Array.isArray(window.appStore.circles)) window.appStore.circles = [];
-  if (!Array.isArray(window.appStore.attendance)) window.appStore.attendance = [];
-  if (!Array.isArray(window.appStore.teacherAttendance)) window.appStore.teacherAttendance = [];
-  if (!Array.isArray(window.appStore.tasmeea)) window.appStore.tasmeea = [];
-  if (!Array.isArray(window.appStore.tests)) window.appStore.tests = [];
-  if (!Array.isArray(window.appStore.notifications)) window.appStore.notifications = [];
-  if (!Array.isArray(window.appStore.messages)) window.appStore.messages = [];
-  if (!Array.isArray(window.appStore.screenOrder)) window.appStore.screenOrder = [];
-  if (!Array.isArray(window.appStore.logs)) window.appStore.logs = [];
-
-  // التأكد من وجود الحسابات الرئيسية
+  ensureArraysIntegrity();
   ensureDefaultAccounts();
   migrateAllPasswordsRoleBased();
   saveLocalStore();
 
-  // تفعيل المزامنة اللحظية السحابية مع Firestore
+  // تفعيل المزامنة اللحظية وترحيل البيانات الموجودة بالكمبيوتر إلى السحابة فوراً
   if (isFirebaseOnline && dbFirestore) {
     setupRealtimeCloudSync();
+    autoMigrateLocalDataToCloud();
   }
+}
+
+function ensureArraysIntegrity() {
+  const keys = [
+    "users",
+    "students",
+    "teachers",
+    "circles",
+    "attendance",
+    "teacherAttendance",
+    "tasmeea",
+    "tests",
+    "notifications",
+    "messages",
+    "screenOrder",
+    "logs",
+  ];
+  keys.forEach((k) => {
+    if (!Array.isArray(window.appStore[k])) window.appStore[k] = [];
+  });
 }
 
 // إنشاء الحسابات الافتراضية
@@ -277,6 +285,50 @@ function seedProductionAdminOnly() {
   saveLocalStore();
 }
 
+// ترحيل البيانات المخزنة محلياً على الكمبيوتر إلى السحابة فورياً
+async function autoMigrateLocalDataToCloud() {
+  if (!dbFirestore) return;
+
+  const collectionsToSync = [
+    "users",
+    "students",
+    "teachers",
+    "circles",
+    "attendance",
+    "teacherAttendance",
+    "tasmeea",
+    "tests",
+    "notifications",
+  ];
+
+  try {
+    for (const colName of collectionsToSync) {
+      const localItems = window.appStore[colName] || [];
+      if (localItems.length > 0) {
+        for (const item of localItems) {
+          if (item && item.id) {
+            await dbFirestore
+              .collection(colName)
+              .doc(item.id)
+              .set(item, { merge: true });
+          }
+        }
+      }
+    }
+
+    if (window.appStore.settings) {
+      await dbFirestore
+        .collection("settings")
+        .doc("main_settings")
+        .set(window.appStore.settings, { merge: true });
+    }
+
+    console.log("☁️ تم رفع وتحديث بيانات الكمبيوتر مع السحابة بنجاح!");
+  } catch (err) {
+    console.error("خطأ أثناء ترحيل البيانات السحابية:", err);
+  }
+}
+
 // المزامنة اللحظية التلقائية من السحابة لجميع الأجهزة (كمبيوتر وجوال)
 function setupRealtimeCloudSync() {
   if (!dbFirestore) return;
@@ -380,7 +432,7 @@ window.executeSafeOperationalReset = async function () {
   if (typeof refreshAllViews === "function") refreshAllViews();
 };
 
-// حفظ أو حذف مستند في السحابة بأمان فوري
+// حفظ أو حذف مستند في السحابة بأمان فوري مع إظهار تنبيه في حال حدوث خطأ
 async function saveToCloud(collectionName, docId, data, isDelete = false) {
   saveLocalStore();
   if (isFirebaseOnline && dbFirestore) {
@@ -394,7 +446,10 @@ async function saveToCloud(collectionName, docId, data, isDelete = false) {
           .set(data, { merge: true });
       }
     } catch (e) {
-      console.error(`خطأ أثناء الحفظ في Firestore [${collectionName}]:`, e);
+      console.error(`❌ فشل الحفظ في السحابة [${collectionName}]:`, e);
+      alert(
+        `⚠️ تعذر رفع التعديل إلى قاعدة البيانات السحابية!\nالخطأ: ${e.message}`,
+      );
     }
   }
 }
