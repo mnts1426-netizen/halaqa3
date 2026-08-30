@@ -1,0 +1,3216 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>حلقات تحفيظ القرآن الكريم - دار المُهتدية النسائية</title>
+    <!-- الخط الرسمي: Cairo & Tajawal -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Tajawal:wght@400;500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <!-- مكتبة الخرائط التفاعلية Leaflet -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- مكتبة التصدير والاستيراد لـ Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- مكتبة تصدير الـ PDF المباشر -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- مكتبات Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+    <!-- ملف التنسيقات -->
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- ========================================== -->
+    <!-- 1. شاشات تسجيل الدخول -->
+    <!-- ========================================== -->
+    <div id="view-login" class="page-view active">
+      <div class="login-wrapper">
+        <div class="login-left-panel">
+          <div class="login-box">
+            <h2 class="login-title">تسجيل الدخول</h2>
+
+            <form
+              id="login-form"
+              onsubmit="
+                event.preventDefault();
+                return handleLoginFormSubmit(event);
+              "
+            >
+              <div class="form-group">
+                <label for="login-username"
+                  >اسم المستخدم / رقم الهوية الوطنية / رقم الجوال</label
+                >
+                <input
+                  type="text"
+                  id="login-username"
+                  class="form-control"
+                  placeholder="admin أو رقم الهوية للطالبة أو الجوال..."
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label for="login-password">كلمة المرور</label>
+                <input
+                  type="password"
+                  id="login-password"
+                  class="form-control"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+              <button type="submit" class="btn btn-primary btn-block btn-lg">
+                دخول للنظام
+              </button>
+            </form>
+
+            <div
+              style="
+                margin-top: 1.25rem;
+                display: flex;
+                flex-direction: column;
+                gap: 0.6rem;
+              "
+            >
+              <button
+                type="button"
+                class="btn btn-outline-brown btn-block"
+                onclick="openModal('modal-self-register')"
+              >
+                📝 رابط تسجيل طالبة جديدة (التحاق بالدار)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="login-right-panel">
+          <div class="brand-hero">
+            <div class="brand-logo-hero">
+              <div
+                class="logo-icon-big"
+                style="background: transparent; border: none; box-shadow: none"
+              >
+                <img
+                  id="login-hero-logo"
+                  src="logo111.png"
+                  alt="شعار الحلقات"
+                  style="width: 100%; height: 100%; object-fit: contain"
+                />
+              </div>
+              <h1 class="brand-name-big" id="login-hero-title">
+                دار المُهتدية النسائية
+              </h1>
+              <p class="brand-sub-big" id="login-hero-sub">جامع الهدى</p>
+            </div>
+
+            <div class="quran-quote">
+              «خيرُكُم مَن تعلَّمَ القرآنَ وعلَّمَهُ»
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="view-student-login" class="page-view style-hidden">
+      <div class="login-wrapper">
+        <div class="login-left-panel">
+          <div class="login-box">
+            <h2 class="login-title">بوابة دخول الطالبات</h2>
+            <form
+              id="student-login-form"
+              onsubmit="
+                event.preventDefault();
+                return handleStudentLoginFormSubmit(event);
+              "
+            >
+              <div class="form-group">
+                <label for="stu-login-identifier"
+                  >رقم الهوية الوطنية أو جوال ولية الأمر</label
+                >
+                <input
+                  type="text"
+                  id="stu-login-identifier"
+                  class="form-control"
+                  placeholder="أدخلي رقم الهوية أو الجوال..."
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label for="stu-login-password">الرقم السري للطالبة</label>
+                <input
+                  type="password"
+                  id="stu-login-password"
+                  class="form-control"
+                  placeholder="الرقم السري (1111)..."
+                  required
+                />
+              </div>
+              <button type="submit" class="btn btn-primary btn-block btn-lg">
+                دخول بوابة الطالبة
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 2. الهيكل العام للتطبيق والقائمة الجانبية -->
+    <!-- ========================================== -->
+    <div id="app-container" class="app-layout style-hidden">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="sidebar-logo">
+            <div class="logo-icon">
+              <img
+                id="sidebar-logo-img"
+                src="logo12.jpeg"
+                alt="شعار الدار"
+                style="width: 100%; height: 100%; object-fit: contain"
+              />
+            </div>
+            <div class="logo-text">
+              <h2 id="sidebar-org-name">دار المُهتدية النسائية</h2>
+              <p id="sidebar-mosque-name">جامع الهدى</p>
+            </div>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav">
+          <div class="nav-section role-section-admin">
+            <a href="#" class="nav-link active" data-target="view-dashboard">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <rect x="3" y="3" width="7" height="7" />
+                <rect x="14" y="3" width="7" height="7" />
+                <rect x="14" y="14" width="7" height="7" />
+                <rect x="3" y="14" width="7" height="7" />
+              </svg>
+              <span>لوحة التحكم</span>
+            </a>
+            <a
+              href="#"
+              class="nav-link nav-admin-only"
+              data-target="view-circles"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                <polyline points="9 22 9 12 15 12 15 22" />
+              </svg>
+              <span>إدارة الدار</span>
+            </a>
+            <a
+              href="#"
+              class="nav-link nav-admin-only"
+              data-target="view-attendance"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <polyline points="9 11 12 14 22 4" />
+                <path
+                  d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
+                />
+              </svg>
+              <span>التحضير</span>
+            </a>
+            <a
+              href="#"
+              class="nav-link nav-teacher-only"
+              data-target="view-tasmeea"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+              </svg>
+              <span>التسميع</span>
+            </a>
+            <a
+              href="#"
+              class="nav-link nav-admin-only"
+              data-target="view-teacher-notes"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                />
+              </svg>
+              <span>ملاحظات المعلمات</span>
+            </a>
+            <a
+              href="#"
+              class="nav-link nav-admin-only"
+              data-target="view-accounts"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              <span>إدارة الحسابات</span>
+            </a>
+            <a
+              href="#"
+              class="nav-link nav-admin-only"
+              data-target="view-screen"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+              <span>نجمات التميز</span>
+            </a>
+            <a
+              href="#"
+              class="nav-link nav-admin-only"
+              data-target="view-tests"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              <span>الاختبارات</span>
+            </a>
+            <a
+              href="#"
+              class="nav-link nav-admin-only"
+              data-target="view-reports"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              <span>التقارير</span>
+            </a>
+            <a
+              href="#"
+              class="nav-link"
+              id="nav-finance-link"
+              data-target="view-finance"
+              style="display: none"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="12" y1="1" x2="12" y2="23"></line>
+                <path
+                  d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"
+                ></path>
+              </svg>
+              <span>التقارير المالية</span>
+            </a>
+            <a href="#" class="nav-link" data-target="view-notifications">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+              <span>الإشعارات والرسائل</span>
+            </a>
+            <a
+              href="#"
+              class="nav-link nav-admin-only"
+              data-target="view-settings"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path
+                  d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+                />
+              </svg>
+              <span>الإعدادات</span>
+            </a>
+          </div>
+        </nav>
+
+        <div class="sidebar-user-card">
+          <div class="user-avatar" id="current-user-avatar">م</div>
+          <div class="user-info">
+            <h4 id="current-user-name">المديرة</h4>
+            <span id="current-user-role">المديرة</span>
+          </div>
+          <button class="logout-btn" id="btn-logout" title="تسجيل الخروج">
+            تسجيل الخروج
+          </button>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="top-header">
+          <div class="top-header-left">
+            <button class="menu-toggle-btn" id="sidebar-toggle">☰</button>
+            <span class="header-welcome-tag" id="welcome-message"
+              >مرحباً المديرة</span
+            >
+          </div>
+          <div class="top-header-right">
+            <span class="current-date-badge" id="header-date"></span>
+          </div>
+        </header>
+
+        <!-- 1. لوحة التحكم -->
+        <section id="view-dashboard" class="content-view active">
+          <div class="stats-grid" id="dashboard-stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon icon-brown">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                </svg>
+              </div>
+              <div class="stat-details">
+                <span class="stat-label" id="lbl-stat-1">الطالبات</span>
+                <h3 class="stat-value" id="val-stat-1">0</h3>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon icon-brown">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                </svg>
+              </div>
+              <div class="stat-details">
+                <span class="stat-label" id="lbl-stat-2">المعلمات</span>
+                <h3 class="stat-value" id="val-stat-2">0</h3>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon icon-red-soft">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="8.5" cy="7" r="4" />
+                  <line x1="18" y1="8" x2="23" y2="13" />
+                  <line x1="23" y1="8" x2="18" y2="13" />
+                </svg>
+              </div>
+              <div class="stat-details">
+                <span class="stat-label" id="lbl-stat-3">الحلقات</span>
+                <h3 class="stat-value" id="val-stat-3">0</h3>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon icon-green">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="9 11 12 14 22 4" />
+                  <path
+                    d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
+                  />
+                </svg>
+              </div>
+              <div class="stat-details">
+                <span class="stat-label" id="lbl-stat-4">حاضرات اليوم</span>
+                <h3 class="stat-value" id="val-stat-4">0</h3>
+              </div>
+            </div>
+
+            <!-- المربع 5: سمّعن اليوم -->
+            <div
+              class="stat-card nav-admin-only"
+              style="cursor: pointer"
+              onclick="openTasmeeaDetailsModal('recited')"
+              title="انقري لعرض قائمة وتفاصيل الطالبات اللاتي سمّعن اليوم"
+            >
+              <div class="stat-icon icon-green">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                  <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                </svg>
+              </div>
+              <div class="stat-details">
+                <span class="stat-label" id="lbl-stat-recited-today"
+                  >سمّعن اليوم</span
+                >
+                <h3 class="stat-value" id="val-stat-recited-today">0</h3>
+              </div>
+            </div>
+
+            <!-- المربع 6: لم يُسمّعن اليوم -->
+            <div
+              class="stat-card nav-admin-only"
+              style="cursor: pointer"
+              onclick="openTasmeeaDetailsModal('not_recited')"
+              title="انقري لعرض قائمة وتفاصيل الطالبات اللاتي لم يُسمّعن اليوم"
+            >
+              <div class="stat-icon icon-red-soft">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="15" y1="9" x2="9" y2="15" />
+                  <line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+              </div>
+              <div class="stat-details">
+                <span class="stat-label" id="lbl-stat-not-recited-today"
+                  >لم يُسمّعن اليوم</span
+                >
+                <h3 class="stat-value" id="val-stat-not-recited-today">0</h3>
+              </div>
+            </div>
+          </div>
+
+          <!-- بطاقة التحضير الذاتي للمديرة والمعلمة -->
+          <div class="card mb-3" id="teacher-self-attendance-card">
+            <div class="card-header flex-between">
+              <div>
+                <h3
+                  style="
+                    color: var(--primary-brown);
+                    font-weight: 800;
+                    margin: 0;
+                  "
+                >
+                  📍 تسجيل الحضور الذاتي بالدار
+                </h3>
+                <small class="text-muted"
+                  >تسجيل حضوركِ المباشر في دار المُهتدية النسائية لهذا
+                  اليوم</small
+                >
+              </div>
+              <div id="teacher-self-checkin-status-badge">
+                <span class="badge" style="background: #e0e0e0; color: #555"
+                  >لم يتم التحضير بعد</span
+                >
+              </div>
+            </div>
+            <div
+              class="card-body p-2 flex-between"
+              style="flex-wrap: wrap; gap: 1rem"
+            >
+              <p style="margin: 0; font-size: 0.9rem; color: #444">
+                يرجى الضغط على الزر أدناه لتأكيد حضوركِ اليومي فور دخولكِ للدار:
+              </p>
+              <button
+                type="button"
+                id="btn-teacher-self-checkin"
+                class="btn btn-success"
+                onclick="handleTeacherSelfCheckIn()"
+              >
+                ✅ تسجيل حضوري اليوم بالدار
+              </button>
+            </div>
+          </div>
+
+          <!-- لوحة التميز خاصة بالمديرة فقط -->
+          <div class="card mb-3 nav-admin-only" id="tamayuz-board-card">
+            <div class="card-header flex-between">
+              <div>
+                <h3>🌟 لوحة الطالبات المتميزات (نجمات التميز الأسبوعي)</h3>
+                <small class="text-muted"
+                  >الطالبات المحققات لنسبة حضور 100% (4 أيام كاملة من الأحد إلى
+                  الأربعاء) وإتقان الحفظ والمراجعة (ممتاز)</small
+                >
+              </div>
+              <div
+                id="tamayuz-week-filter-wrapper"
+                class="flex-align-gap nav-admin-only"
+              >
+                <label style="font-size: 0.85rem; font-weight: 700"
+                  >عرض أسبوع:</label
+                >
+                <select
+                  id="tamayuz-week-filter"
+                  class="form-control select-input"
+                  style="width: auto; min-width: 170px"
+                  onchange="renderTamayuzBoard()"
+                >
+                  <option value="current">الأسبوع الحالي</option>
+                  <option value="w_1">الأسبوع السابق (1)</option>
+                  <option value="w_2">الأسبوع السابق (2)</option>
+                  <option value="w_3">الأسبوع السابق (3)</option>
+                </select>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>الطالبة المتميزة</th>
+                    <th>الحلقة</th>
+                    <th>نسبة الحضور الأسبوعي</th>
+                    <th>إنجاز مقرر التسميع</th>
+                    <th>المرتبة</th>
+                  </tr>
+                </thead>
+                <tbody id="tamayuz-students-body">
+                  <tr>
+                    <td colspan="5" class="text-center text-muted p-3">
+                      جاري تجهيز لوحة التميز...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div
+            class="dashboard-columns teacher-only-dash"
+            id="teacher-dash-columns"
+          >
+            <div class="card card-dashboard">
+              <div class="card-header flex-between">
+                <h3 id="dash-right-box-title">حلقاتي</h3>
+              </div>
+              <div class="card-body" id="dash-right-box-content"></div>
+            </div>
+            <div class="card card-dashboard">
+              <div class="card-header flex-between">
+                <h3 id="dash-left-box-title">جدول اليوم</h3>
+              </div>
+              <div class="card-body" id="dash-left-box-content"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. شاشة إدارة الدار -->
+        <section id="view-circles" class="content-view">
+          <div
+            class="complex-hub-cards mb-3"
+            style="
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+              gap: 1rem;
+            "
+          >
+            <div
+              class="card hub-card active"
+              id="hub-btn-circles"
+              onclick="switchComplexSection('circles')"
+              style="
+                cursor: pointer;
+                text-align: center;
+                border: 2px solid var(--primary-brown);
+                padding: 1.2rem;
+                transition: all 0.2s;
+              "
+            >
+              <div style="font-size: 2.2rem; margin-bottom: 0.4rem">🏛️</div>
+              <h3
+                style="
+                  font-size: 1.15rem;
+                  font-weight: 800;
+                  color: var(--primary-brown);
+                "
+              >
+                إدارة الحلقات
+              </h3>
+              <p class="text-muted" style="font-size: 0.8rem; margin: 0">
+                إنشاء وتعديل وتوزيع الحلقات
+              </p>
+            </div>
+            <div
+              class="card hub-card"
+              id="hub-btn-teachers"
+              onclick="switchComplexSection('teachers')"
+              style="
+                cursor: pointer;
+                text-align: center;
+                border: 1px solid var(--border-color);
+                padding: 1.2rem;
+                transition: all 0.2s;
+              "
+            >
+              <div style="font-size: 2.2rem; margin-bottom: 0.4rem">🧕</div>
+              <h3 style="font-size: 1.15rem; font-weight: 800">
+                إدارة المعلمات
+              </h3>
+              <p class="text-muted" style="font-size: 0.8rem; margin: 0">
+                بيانات المعلمات، التكليفات، ومتابعة التحضير
+              </p>
+            </div>
+            <div
+              class="card hub-card"
+              id="hub-btn-students"
+              onclick="switchComplexSection('students')"
+              style="
+                cursor: pointer;
+                text-align: center;
+                border: 1px solid var(--border-color);
+                padding: 1.2rem;
+                transition: all 0.2s;
+              "
+            >
+              <div style="font-size: 2.2rem; margin-bottom: 0.4rem">🌸</div>
+              <h3 style="font-size: 1.15rem; font-weight: 800">
+                إدارة الطالبات
+              </h3>
+              <p class="text-muted" style="font-size: 0.8rem; margin: 0">
+                قوائم الطالبات، الاستيراد، وقبول الطلبات
+              </p>
+            </div>
+          </div>
+
+          <div id="sec-complex-circles">
+            <div class="flex-between mb-3">
+              <div></div>
+              <button
+                class="btn btn-primary nav-admin-only"
+                onclick="openModalAddCircle()"
+              >
+                ➕ إضافة حلقة جديدة
+              </button>
+            </div>
+            <div class="card card-search-only">
+              <input
+                type="text"
+                id="search-circles"
+                class="form-control search-input"
+                placeholder="ابحث في الحلقات..."
+              />
+            </div>
+            <div class="circles-grid" id="circles-cards-container"></div>
+          </div>
+
+          <div id="sec-complex-teachers" class="style-hidden">
+            <div class="flex-between mb-3">
+              <div
+                class="sub-tabs-bar nav-admin-only"
+                style="margin-bottom: 0; border: none"
+              >
+                <button
+                  class="tab-btn active"
+                  id="tab-btn-teachers-list"
+                  onclick="switchTeacherSubTab('list')"
+                >
+                  قائمة المعلمات
+                </button>
+                <button
+                  class="tab-btn"
+                  id="tab-btn-teachers-attendance"
+                  onclick="switchTeacherSubTab('attendance')"
+                >
+                  📋 متابعة تحضير المعلمات اليومي
+                </button>
+              </div>
+              <div class="header-actions">
+                <button
+                  class="btn btn-outline-brown"
+                  onclick="exportTeachersExcel()"
+                >
+                  📤 تصدير Excel
+                </button>
+                <button
+                  class="btn btn-outline-brown"
+                  onclick="exportTeachersPDF()"
+                >
+                  📄 تنزيل PDF
+                </button>
+                <button class="btn btn-primary" onclick="openModalAddTeacher()">
+                  ➕ إضافة معلمة
+                </button>
+              </div>
+            </div>
+
+            <div class="card" id="box-teachers-list-table">
+              <div class="card-filter-bar">
+                <input
+                  type="text"
+                  id="search-teachers"
+                  class="form-control search-input"
+                  placeholder="ابحثي باسم المعلمة أو رقم الجوال..."
+                />
+              </div>
+              <div class="table-responsive">
+                <table class="data-table" id="teachers-table-element">
+                  <thead>
+                    <tr>
+                      <th>اسم المعلمة</th>
+                      <th>رقم الجوال</th>
+                      <th>الحلقات المكلفة بها</th>
+                      <th>آخر دخول للنظام</th>
+                      <th>إجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody id="teachers-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card style-hidden" id="box-teachers-attendance-table">
+              <div class="card-filter-bar flex-between">
+                <div style="display: flex; gap: 0.8rem; flex: 1">
+                  <input
+                    type="date"
+                    id="teacher-attendance-date-select"
+                    class="form-control select-input"
+                    onchange="renderTeachersAttendanceTable()"
+                  />
+                  <input
+                    type="text"
+                    id="search-teacher-attendance"
+                    class="form-control search-input"
+                    placeholder="🔍 ابحثي باسم المعلمة..."
+                    oninput="renderTeachersAttendanceTable()"
+                  />
+                </div>
+                <div class="flex-align-gap">
+                  <button
+                    class="btn btn-outline-brown btn-sm"
+                    onclick="exportTeachersAttendanceExcel()"
+                  >
+                    📤 تصدير Excel
+                  </button>
+                  <button
+                    class="btn btn-outline-brown btn-sm"
+                    onclick="exportTeachersAttendancePDF()"
+                  >
+                    📄 تنزيل PDF
+                  </button>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table
+                  class="data-table"
+                  id="teachers-attendance-table-element"
+                >
+                  <thead>
+                    <tr>
+                      <th style="width: 45px; text-align: center">م</th>
+                      <th>اسم المعلمة</th>
+                      <th>رقم الجوال</th>
+                      <th>الحلقات المكلفة بها</th>
+                      <th>وقت التحضير الذاتي</th>
+                      <th>حالة الحضور (تعديل المديرة)</th>
+                      <th>ملاحظة المديرة</th>
+                    </tr>
+                  </thead>
+                  <tbody id="teachers-attendance-table-body">
+                    <tr>
+                      <td colspan="7" class="text-center text-muted p-3">
+                        جاري تجهيز السجل...
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div id="sec-complex-students" class="style-hidden">
+            <div class="flex-between mb-3">
+              <div
+                class="sub-tabs-bar nav-admin-only"
+                style="margin-bottom: 0; border: none"
+              >
+                <button
+                  class="tab-btn active"
+                  id="tab-btn-active-students"
+                  onclick="switchStudentSubTab('active')"
+                >
+                  الطالبات الحاليات
+                </button>
+                <button
+                  class="tab-btn"
+                  id="tab-btn-pending-requests"
+                  onclick="switchStudentSubTab('pending')"
+                >
+                  📥 طلبات التسجيل الجديدة (<span id="pending-count-badge"
+                    >0</span
+                  >)
+                </button>
+              </div>
+              <div class="header-actions">
+                <button
+                  class="btn btn-outline-brown nav-admin-only"
+                  onclick="openModal('modal-excel-import')"
+                >
+                  📥 استيراد طالبات من Excel
+                </button>
+                <button
+                  class="btn btn-outline-brown"
+                  onclick="executeBulkExportStudentsExcel()"
+                >
+                  📤 تصدير Excel
+                </button>
+                <button
+                  class="btn btn-outline-brown"
+                  onclick="exportStudentsPDF()"
+                >
+                  📄 تنزيل PDF
+                </button>
+                <button
+                  class="btn btn-primary nav-admin-only"
+                  onclick="openModal('modal-add-student')"
+                >
+                  ➕ إضافة طالبة
+                </button>
+              </div>
+            </div>
+
+            <div class="card" id="box-active-students-table">
+              <div
+                class="bulk-actions-bar p-2 mb-3 flex-between no-print"
+                id="students-bulk-bar"
+                style="
+                  background: var(--primary-light);
+                  border: 1px solid var(--border-color);
+                  border-radius: 8px;
+                  flex-wrap: wrap;
+                  gap: 0.6rem;
+                "
+              >
+                <div class="flex-align-gap">
+                  <span
+                    style="
+                      font-weight: 800;
+                      font-size: 0.88rem;
+                      color: var(--primary-brown);
+                    "
+                  >
+                    📌 الإجراءات الجماعية (<span id="selected-students-count"
+                      >0</span
+                    >
+                    محددة):
+                  </span>
+                </div>
+                <div class="flex-align-gap" style="flex-wrap: wrap">
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    onclick="openBulkCircleModal('assign')"
+                  >
+                    ➕ إضافة لحلقة
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-outline-brown btn-sm"
+                    onclick="openBulkCircleModal('transfer')"
+                  >
+                    🔄 نقل لحلقة
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-danger btn-sm"
+                    onclick="executeBulkDeleteStudents()"
+                  >
+                    🗑️ حذف المحدد
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-success btn-sm"
+                    onclick="executeBulkExportStudentsExcel()"
+                  >
+                    📤 تصدير Excel
+                  </button>
+                </div>
+              </div>
+
+              <div class="card-filter-bar">
+                <input
+                  type="text"
+                  id="search-students"
+                  class="form-control search-input"
+                  placeholder="ابحثي بالاسم أو الهوية أو الجوال..."
+                />
+                <select
+                  id="filter-student-circle"
+                  class="form-control select-input"
+                >
+                  <option value="all">كل الحلقات</option>
+                </select>
+                <select
+                  id="filter-student-status"
+                  class="form-control select-input"
+                >
+                  <option value="active">النشطات</option>
+                  <option value="archived">الأرشيف</option>
+                </select>
+              </div>
+
+              <div class="table-responsive">
+                <table class="data-table" id="students-table-element">
+                  <thead>
+                    <tr>
+                      <th style="width: 40px; text-align: center">
+                        <input
+                          type="checkbox"
+                          id="select-all-students-cb"
+                          onchange="toggleSelectAllStudents(this)"
+                          title="تحديد / إلغاء تحديد الكل"
+                        />
+                      </th>
+                      <th>الاسم الرباعي</th>
+                      <th>الهوية</th>
+                      <th>جوال الطالبة</th>
+                      <th>اسم ولي / ولية الأمر</th>
+                      <th>صلة القرابة</th>
+                      <th>جوال التواصل</th>
+                      <th>الحلقة</th>
+                      <th>الحالة</th>
+                      <th>إجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody id="students-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card style-hidden" id="box-pending-requests-table">
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>اسم الطالبة</th>
+                      <th>رقم الهوية</th>
+                      <th>مقدار الحفظ والدراسة السابقة</th>
+                      <th>اسم ولي / ولية الأمر</th>
+                      <th>صلة القرابة</th>
+                      <th>جوال التواصل</th>
+                      <th>مكان السكن</th>
+                      <th>القرار</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pending-requests-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. شاشة التحضير -->
+        <section id="view-attendance" class="content-view">
+          <div class="card">
+            <div class="card-filter-bar flex-between">
+              <div
+                class="filter-inputs-group"
+                style="display: flex; gap: 0.8rem; flex: 1"
+              >
+                <select
+                  id="attendance-circle-select"
+                  class="form-control select-input"
+                >
+                  <option value="">— اختر الحلقة —</option>
+                </select>
+                <input
+                  type="date"
+                  id="attendance-date-select"
+                  class="form-control select-input"
+                />
+                <input
+                  type="text"
+                  id="search-attendance-student"
+                  class="form-control search-input"
+                  placeholder="🔍 ابحثي عن طالبة بالحلقة..."
+                />
+              </div>
+              <div class="flex-align-gap">
+                <button
+                  class="btn btn-outline-brown btn-sm"
+                  onclick="exportAttendanceExcel()"
+                >
+                  📤 تصدير Excel
+                </button>
+                <button
+                  class="btn btn-outline-brown btn-sm"
+                  onclick="exportAttendancePDF()"
+                >
+                  📄 تنزيل PDF
+                </button>
+                <button
+                  class="btn btn-outline-brown btn-sm"
+                  onclick="markAllAbsent()"
+                >
+                  الكل غائب
+                </button>
+              </div>
+            </div>
+            <div class="table-responsive" id="attendance-table-wrapper">
+              <table class="data-table" id="attendance-table-element">
+                <thead>
+                  <tr>
+                    <th>اسم الطالبة</th>
+                    <th>الحلقة</th>
+                    <th>حالة الحضور</th>
+                    <th>ملاحظات</th>
+                  </tr>
+                </thead>
+                <tbody id="attendance-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. شاشة التسميع -->
+        <section id="view-tasmeea" class="content-view">
+          <div class="card mb-3">
+            <div class="tasmeea-header-bar" style="display: flex; gap: 1rem">
+              <div class="form-group flex-1">
+                <label>الحلقة</label>
+                <select id="tasmeea-circle-select" class="form-control">
+                  <option value="">— اختر الحلقة —</option>
+                </select>
+              </div>
+              <div class="form-group flex-1">
+                <label>التاريخ</label>
+                <input
+                  type="date"
+                  id="tasmeea-date-select"
+                  class="form-control"
+                />
+              </div>
+            </div>
+          </div>
+          <div id="tasmeea-students-container">
+            <div class="empty-state-card">
+              <h3>اختاري الحلقة للتسميع</h3>
+              <p class="text-muted">
+                قومي باختيار الحلقة والتاريخ لبدء التحضير والتسميع
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. شاشة ملاحظات المعلمات -->
+        <section id="view-teacher-notes" class="content-view">
+          <div class="card">
+            <div class="card-header flex-between">
+              <div>
+                <h3>📝 ملاحظات المعلمات للإدارة</h3>
+                <small class="text-muted"
+                  >الملاحظات والرسائل التي تدوّنها المعلمات أثناء التسميع اليومي
+                  للطالبات</small
+                >
+              </div>
+              <div class="flex-align-gap no-print">
+                <button
+                  class="btn btn-outline-brown btn-sm"
+                  onclick="exportTeacherNotesExcel()"
+                >
+                  📤 تصدير Excel
+                </button>
+                <button
+                  class="btn btn-outline-brown btn-sm"
+                  onclick="exportTeacherNotesPDF()"
+                >
+                  📄 تنزيل PDF
+                </button>
+              </div>
+            </div>
+            <div class="card-filter-bar no-print mt-2">
+              <input
+                type="text"
+                id="search-teacher-notes"
+                class="form-control search-input"
+                placeholder="ابحثي باسم الطالبة أو نص الملاحظة..."
+              />
+              <select
+                id="filter-teacher-notes-circle"
+                class="form-control select-input"
+              >
+                <option value="all">كل الحلقات</option>
+              </select>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table" id="teacher-notes-table-element">
+                <thead>
+                  <tr>
+                    <th style="width: 50px">م</th>
+                    <th>التاريخ</th>
+                    <th>اسم المعلمة</th>
+                    <th>الحلقة</th>
+                    <th>اسم الطالبة</th>
+                    <th>ملاحظة المعلمة للإدارة</th>
+                  </tr>
+                </thead>
+                <tbody id="teacher-notes-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. شاشة إدارة الحسابات -->
+        <section id="view-accounts" class="content-view">
+          <div class="card">
+            <div class="card-header flex-between">
+              <div>
+                <h3>👥 إدارة جميع حسابات النظام</h3>
+                <small class="text-muted"
+                  >التحكم في بيانات وصلاحيات وحالات الحسابات وتعديل الأرقام
+                  السرية</small
+                >
+              </div>
+              <div class="flex-align-gap no-print">
+                <button
+                  class="btn btn-outline-brown btn-sm"
+                  onclick="exportAccountsExcel()"
+                >
+                  📤 تصدير Excel
+                </button>
+                <button
+                  class="btn btn-outline-brown btn-sm"
+                  onclick="exportAccountsPDF()"
+                >
+                  📄 تنزيل PDF
+                </button>
+              </div>
+            </div>
+            <div class="card-filter-bar no-print mt-2">
+              <input
+                type="text"
+                id="search-accounts"
+                class="form-control search-input"
+                placeholder="ابحثي بالاسم أو اسم المستخدم أو الجوال..."
+              />
+              <select
+                id="filter-account-role"
+                class="form-control select-input"
+              >
+                <option value="all">كل الأدوار</option>
+                <option value="teacher">المعلمات</option>
+                <option value="student">الطالبات</option>
+                <option value="screen">نجمات التميز</option>
+              </select>
+              <select
+                id="filter-account-status"
+                class="form-control select-input"
+              >
+                <option value="all">كل الحالات</option>
+                <option value="active">النشطات فقط</option>
+                <option value="suspended">الموقوفات (المؤرشفات)</option>
+              </select>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table" id="accounts-table-element">
+                <thead>
+                  <tr>
+                    <th style="width: 50px">م</th>
+                    <th>الاسم الكامل</th>
+                    <th>الدور / الصلاحية</th>
+                    <th>اسم المستخدم (رقم الهوية للطالبة)</th>
+                    <th>الحالة</th>
+                    <th>إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody id="accounts-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7. شاشة نجمات التميز الأسبوعي -->
+        <section id="view-screen" class="content-view">
+          <div class="card mb-3">
+            <div class="card-header flex-between">
+              <div>
+                <h2
+                  style="
+                    font-size: 1.5rem;
+                    font-weight: 800;
+                    color: var(--primary-brown);
+                    margin: 0;
+                  "
+                >
+                  📺 لوحة عرض نجمات التميز الأسبوعي
+                </h2>
+                <small class="text-muted"
+                  >عرض مباشر للطالبات الحاصلات على بطاقات التميز مع إمكانية ضبط
+                  الترتيب</small
+                >
+              </div>
+              <div class="flex-align-gap">
+                <button
+                  class="btn btn-outline-brown btn-sm"
+                  onclick="resetScreenStudentOrder()"
+                >
+                  🔄 إعادة الضبط التلقائي
+                </button>
+              </div>
+            </div>
+            <div
+              id="mosque-screen-grid"
+              style="
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                gap: 1rem;
+                margin-top: 1rem;
+              "
+            ></div>
+          </div>
+          <div class="card mt-3">
+            <div class="card-header flex-between">
+              <h3 style="font-size: 1.1rem; font-weight: 800; margin: 0">
+                ⚙️ التحكم في ترتيب ظهور نجمات التميز على الشاشة
+              </h3>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width: 70px; text-align: center">المركز</th>
+                    <th>اسم الطالبة المتميزة</th>
+                    <th>الحلقة</th>
+                    <th>الحالة</th>
+                    <th style="text-align: center">تعديل الترتيب</th>
+                  </tr>
+                </thead>
+                <tbody id="screen-manage-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8. شاشة الاختبارات -->
+        <section id="view-tests" class="content-view">
+          <div class="flex-between mb-3 no-print">
+            <div class="flex-align-gap">
+              <button
+                class="btn btn-outline-brown"
+                onclick="exportTestsExcel()"
+              >
+                📤 تصدير Excel
+              </button>
+              <button class="btn btn-outline-brown" onclick="exportTestsPDF()">
+                📄 تنزيل PDF
+              </button>
+            </div>
+            <button class="btn btn-primary" onclick="openModalAddTest()">
+              إضافة اختبار
+            </button>
+          </div>
+          <div class="card" id="tests-list-card">
+            <div class="card-filter-bar no-print">
+              <input
+                type="text"
+                id="search-tests"
+                class="form-control search-input"
+                placeholder="ابحثي باسم الطالبة أو نوع الاختبار..."
+                oninput="renderTestsTable()"
+              />
+              <select
+                id="filter-test-circle"
+                class="form-control select-input"
+                onchange="renderTestsTable()"
+              >
+                <option value="all">كل الحلقات</option>
+              </select>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table" id="tests-table-element">
+                <thead>
+                  <tr>
+                    <th>اسم الطالبة</th>
+                    <th>الحلقة</th>
+                    <th>نوع الاختبار / المقرر</th>
+                    <th>الدرجة</th>
+                    <th>التقدير</th>
+                    <th>التاريخ</th>
+                    <th class="no-print">إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody id="tests-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 9. شاشة التقارير الرسمية -->
+        <section id="view-reports" class="content-view">
+          <div class="card no-print">
+            <div
+              class="reports-filter-grid"
+              style="
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                gap: 1rem;
+              "
+            >
+              <div class="form-group" id="report-student-group">
+                <label>الطالبة</label>
+                <select id="report-student-select" class="form-control">
+                  <option value="all">كل الطالبات</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>نوع التقرير</label>
+                <select
+                  id="report-type-select"
+                  class="form-control"
+                  onchange="handleReportTypeChange()"
+                >
+                  <option value="student_achievement">تقرير إنجاز طالبة</option>
+                  <option value="students">
+                    التقرير الإحصائي الشامل للطالبات
+                  </option>
+                  <option value="tasmeea">تقرير إنجاز التسميع</option>
+                  <option value="tamayuz">
+                    تقرير التميز الأسبوعي (عدد البطاقات)
+                  </option>
+                </select>
+              </div>
+              <div class="form-group" id="report-circle-group">
+                <label>الحلقة</label>
+                <select
+                  id="report-circle-select"
+                  class="form-control"
+                  onchange="populateReportStudentsDropdown()"
+                >
+                  <option value="all">كل الحلقات</option>
+                </select>
+              </div>
+              <div class="form-group style-hidden" id="report-week-range-group">
+                <label>نطاق الأسابيع (من - إلى)</label>
+                <div style="display: flex; gap: 0.5rem">
+                  <select id="report-week-from" class="form-control"></select>
+                  <select id="report-week-to" class="form-control"></select>
+                </div>
+              </div>
+              <div class="form-group" id="report-date-from-group">
+                <label>من تاريخ</label>
+                <input type="date" id="report-date-from" class="form-control" />
+              </div>
+              <div class="form-group" id="report-date-to-group">
+                <label>إلى تاريخ</label>
+                <input type="date" id="report-date-to" class="form-control" />
+              </div>
+            </div>
+            <div class="mt-3 flex-align-gap">
+              <button class="btn btn-primary" onclick="generateReport()">
+                🔍 استخراج التقرير
+              </button>
+              <button
+                class="btn btn-outline-brown"
+                onclick="exportReportExcel()"
+              >
+                📤 تصدير Excel
+              </button>
+              <button
+                class="btn btn-outline-brown"
+                onclick="downloadReportPDF()"
+              >
+                📄 تنزيل PDF
+              </button>
+            </div>
+          </div>
+
+          <div class="card mt-3" id="report-results-wrapper">
+            <div class="print-official-header">
+              <div class="print-header-center-logos">
+                <img id="print-logo-new" src="logo12.jpeg" alt="شعار الدار" />
+              </div>
+              <div class="print-header-title-box">
+                <h3
+                  id="print-report-title"
+                  style="
+                    margin: 0;
+                    font-size: 1.15rem;
+                    font-weight: 800;
+                    color: var(--primary-brown);
+                  "
+                >
+                  تقرير رسمي
+                </h3>
+                <p
+                  id="print-report-period"
+                  style="
+                    margin: 3px 0 0 0;
+                    font-size: 0.88rem;
+                    color: #333;
+                    font-weight: 700;
+                  "
+                >
+                  كامل الفترة المسجلة
+                </p>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table" id="report-results-table">
+                <thead id="report-thead"></thead>
+                <tbody id="report-tbody">
+                  <tr>
+                    <td class="text-center text-muted p-4">
+                      حددي خيارات التقرير ثم اضغطي على "استخراج التقرير"
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 10. شاشة التقارير المالية -->
+        <section id="view-finance" class="content-view">
+          <div class="card">
+            <div class="card-header flex-between">
+              <h3
+                style="color: var(--primary-brown); font-weight: 800; margin: 0"
+              >
+                💼 التقارير المالية والمصروفات
+              </h3>
+            </div>
+            <div class="empty-state-card p-4 text-center">
+              <p class="text-muted">
+                قسم التقارير المالية قيد الإعداد والتجهيز...
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 11. شاشة الإشعارات والرسائل -->
+        <section id="view-notifications" class="content-view">
+          <div class="flex-between mb-3">
+            <div></div>
+            <button
+              class="btn btn-primary"
+              onclick="openModalSendUnifiedMessage()"
+            >
+              💬 إرسال رسالة / إشعار جديد
+            </button>
+          </div>
+          <div class="dashboard-columns">
+            <div class="card">
+              <div class="card-header"><h3>📢 الإشعارات والتعاميم</h3></div>
+              <div id="unified-notifications-container"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><h3>💬 الرسائل المباشرة</h3></div>
+              <div id="unified-chats-container">
+                <div class="empty-state-card p-3">
+                  <p class="text-muted">لا توجد رسائل واردة حالياً</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 12. شاشة الإعدادات -->
+        <section id="view-settings" class="content-view">
+          <div class="dashboard-columns">
+            <div class="card nav-admin-only" id="admin-org-settings-card">
+              <h3 style="color: var(--primary-brown); font-weight: 800">
+                🏛️ إعدادات وهوية الدار والموقع والطباعة
+              </h3>
+              <form
+                id="form-org-settings"
+                onsubmit="handleSaveOrgSettings(event)"
+                class="mt-3"
+              >
+                <div class="form-group">
+                  <label>اسم الدار الرسمي</label
+                  ><input
+                    type="text"
+                    id="set-org-name"
+                    class="form-control"
+                    required
+                  />
+                </div>
+                <div class="form-group">
+                  <label>اسم المسجد / التابع له</label
+                  ><input
+                    type="text"
+                    id="set-org-mosque"
+                    class="form-control"
+                    required
+                  />
+                </div>
+                <div class="form-group">
+                  <label>اسم مديرة الدار</label
+                  ><input
+                    type="text"
+                    id="set-org-director"
+                    class="form-control"
+                    required
+                  />
+                </div>
+
+                <!-- إعداد الموقع الجغرافي بالخريطة التفاعلية -->
+                <div class="form-group">
+                  <label
+                    >📍 الموقع الجغرافي للدار (إحداثيات GPS / الخريطة
+                    التفاعلية)</label
+                  >
+                  <div
+                    style="
+                      display: flex;
+                      gap: 0.5rem;
+                      flex-wrap: wrap;
+                      margin-bottom: 0.5rem;
+                    "
+                  >
+                    <input
+                      type="text"
+                      id="set-org-location"
+                      class="form-control"
+                      placeholder="مثال: 18.216500, 42.505300"
+                      style="flex: 2; min-width: 200px"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-primary"
+                      onclick="openMapPickerModal()"
+                      title="تحديد الموقع والنطاق عبر الخريطة التفاعلية"
+                    >
+                      🗺️ فتح الخريطة
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-outline-brown"
+                      onclick="getCurrentLocationCoords()"
+                      title="تحديد موقعي الحالي بدقة"
+                    >
+                      📡 موقعي الحالي
+                    </button>
+                  </div>
+                </div>
+
+                <!-- إعداد نطاق مسافة التحضير بالمتر -->
+                <div class="form-group">
+                  <label
+                    >📏 مسافة نطاق التحضير المسموح بها حول الدار (بالمتر)</label
+                  >
+                  <input
+                    type="number"
+                    id="set-org-radius"
+                    class="form-control"
+                    placeholder="مثال: 50"
+                    min="10"
+                    max="5000"
+                    value="50"
+                    required
+                  />
+                  <small class="text-muted"
+                    >المسافة القصوى المسموح بها للمعلمة أو المديرة لتسجيل الحضور
+                    الذاتي عن موقع الدار (مثلاً: 50 متراً).</small
+                  >
+                </div>
+
+                <div class="form-group">
+                  <label>حجم خط العناوين ورأس الصفحة</label>
+                  <select id="set-header-font-size" class="form-control">
+                    <option value="11px">صغير جداً (11px)</option>
+                    <option value="12px">صغير (12px)</option>
+                    <option value="13px" selected>متوسط قياسي (13px)</option>
+                    <option value="15px">متوسط كبير (15px)</option>
+                    <option value="17px">كبير (17px)</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <div class="form-group flex-1">
+                    <label>مسار/رابط شعار الدار</label
+                    ><input
+                      type="text"
+                      id="set-org-logo-new"
+                      class="form-control"
+                    />
+                  </div>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                  💾 حفظ إعدادات وهوية وموقع الدار
+                </button>
+              </form>
+            </div>
+
+            <div class="card">
+              <h3>👤 البيانات الشخصية للحساب</h3>
+              <form
+                id="form-user-profile-settings"
+                onsubmit="handleUserProfileSave(event)"
+                class="mt-3"
+              >
+                <div class="form-group">
+                  <label>الاسم الكامل</label
+                  ><input
+                    type="text"
+                    id="set-profile-name"
+                    class="form-control"
+                    required
+                  />
+                </div>
+                <div class="form-group">
+                  <label>رقم الجوال</label
+                  ><input
+                    type="tel"
+                    id="set-profile-phone"
+                    class="form-control"
+                    required
+                  />
+                </div>
+                <div class="form-group">
+                  <label
+                    >كلمة المرور الجديدة
+                    <small class="text-muted"
+                      >(اتركيها فارغة إذا لم تريدي التغيير)</small
+                    ></label
+                  ><input
+                    type="password"
+                    id="set-profile-password"
+                    class="form-control"
+                    placeholder="••••••••"
+                  />
+                </div>
+                <button type="submit" class="btn btn-primary">
+                  💾 حفظ وتحديث البيانات
+                </button>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <!-- 13. شاشات الطالبة -->
+        <section id="view-student-home" class="content-view"></section>
+        <section id="view-student-lessons" class="content-view">
+          <div id="stu-lessons-container">
+            <div class="empty-state-card">
+              <p class="text-muted">جاري تحميل السجل...</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- MODALS: النوافذ المنبثقة -->
+
+    <!-- نافذة الخريطة التفاعلية -->
+    <div id="modal-map-picker" class="modal-overlay">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h3>🗺️ تحديد موقع الدار ونطاق التحضير المسموح به</h3>
+          <button class="modal-close" onclick="closeModal('modal-map-picker')">
+            &times;
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted mb-2" style="font-size: 0.88rem">
+            انقري على أي نقطة في الخريطة أو اسحبي المؤشر لتحديد موقع الدار بدقة:
+          </p>
+
+          <div class="map-search-bar-row mb-2">
+            <input
+              type="text"
+              id="map-search-query-input"
+              class="form-control"
+              placeholder="🔍 ابحثي عن اسم الحي، الشارع، أو الدار..."
+              onkeydown="
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  searchMapLocationQuery();
+                }
+              "
+            />
+            <button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="searchMapLocationQuery()"
+            >
+              بحث
+            </button>
+          </div>
+
+          <div
+            style="
+              display: flex;
+              gap: 0.8rem;
+              margin-bottom: 0.75rem;
+              flex-wrap: wrap;
+            "
+          >
+            <div style="flex: 1; min-width: 180px">
+              <label style="font-size: 0.85rem; font-weight: 700"
+                >نطاق المسافة المسموح بها (متر):</label
+              >
+              <input
+                type="number"
+                id="map-modal-radius-input"
+                class="form-control"
+                value="50"
+                min="10"
+                max="5000"
+                oninput="updateMapPickerRadius(this.value)"
+              />
+            </div>
+            <div style="flex: 2; min-width: 220px">
+              <label style="font-size: 0.85rem; font-weight: 700"
+                >الإحداثيات المختارة:</label
+              >
+              <input
+                type="text"
+                id="map-modal-coords-display"
+                class="form-control"
+                readonly
+                style="direction: ltr; font-weight: 700; background: #f9f9f9"
+              />
+            </div>
+          </div>
+          <div
+            id="map-picker-container"
+            style="
+              height: 380px;
+              width: 100%;
+              border-radius: 8px;
+              border: 1px solid var(--border-color);
+              z-index: 1;
+            "
+          ></div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-primary"
+            onclick="confirmMapPickerLocation()"
+          >
+            ✅ اعتماد الموقع والمسافة
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-brown"
+            onclick="closeModal('modal-map-picker')"
+          >
+            إلغاء
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1. نافذة إضافة اختبار -->
+    <div id="modal-add-test" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>تسجيل اختبار جديد</h3>
+          <button class="modal-close" onclick="closeModal('modal-add-test')">
+            &times;
+          </button>
+        </div>
+        <form id="form-add-test" onsubmit="handleSaveTest(event)">
+          <div class="modal-body">
+            <div class="form-group">
+              <label>الحلقة</label>
+              <select
+                id="test-circle-select"
+                class="form-control"
+                onchange="populateTestStudentsDropdown()"
+                required
+              >
+                <option value="">— اختر الحلقة —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>الطالبة</label>
+              <select id="test-student-select" class="form-control" required>
+                <option value="">— اختاري الطالبة —</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label>نوع الاختبار / المقرر</label>
+                <input
+                  type="text"
+                  id="test-type"
+                  class="form-control"
+                  placeholder="مثال: اختبار جزء عم..."
+                  required
+                />
+              </div>
+              <div class="form-group flex-1">
+                <label>الدرجة من (100)</label>
+                <input
+                  type="number"
+                  id="test-score"
+                  class="form-control"
+                  min="0"
+                  max="100"
+                  required
+                />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>التقدير</label>
+              <select id="test-rating" class="form-control" required>
+                <option value="ممتاز مرتفع">ممتاز مرتفع</option>
+                <option value="ممتاز">ممتاز</option>
+                <option value="جيد جداً مرتفع">جيد جداً مرتفع</option>
+                <option value="جيد جداً">جيد جداً</option>
+                <option value="جيد مرتفع">جيد مرتفع</option>
+                <option value="جيد">جيد</option>
+                <option value="ضعيف">ضعيف</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">حفظ الاختبار</button>
+            <button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="closeModal('modal-add-test')"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 2. نافذة تفاصيل تسميع اليوم -->
+    <div id="modal-tasmeea-status-details" class="modal-overlay">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h3 id="tasmeea-details-modal-title">تفاصيل تسميع الطالبات اليوم</h3>
+          <button
+            class="modal-close"
+            onclick="closeModal('modal-tasmeea-status-details')"
+          >
+            &times;
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="flex-between mb-2 no-print">
+            <input
+              type="text"
+              id="search-modal-tasmeea-status"
+              class="form-control search-input"
+              placeholder="🔍 ابحثي بالاسم أو الحلقة..."
+              oninput="filterTasmeeaDetailsModal()"
+            />
+            <div class="flex-align-gap">
+              <button
+                class="btn btn-outline-brown btn-sm"
+                onclick="exportTasmeeaDetailsExcel()"
+              >
+                📤 تصدير Excel
+              </button>
+              <button
+                class="btn btn-outline-brown btn-sm"
+                onclick="exportTasmeeaDetailsPDF()"
+              >
+                📄 تنزيل PDF
+              </button>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="tasmeea-details-table">
+              <thead>
+                <tr>
+                  <th style="width: 45px; text-align: center">م</th>
+                  <th>اسم الطالبة</th>
+                  <th>الحلقة</th>
+                  <th>حالة التسميع</th>
+                  <th>الدرس الجديد</th>
+                  <th>المراجعة</th>
+                  <th>التلاوة</th>
+                  <th>التقدير العام</th>
+                  <th>ملاحظات المعلمة</th>
+                </tr>
+              </thead>
+              <tbody id="tasmeea-details-tbody">
+                <tr>
+                  <td colspan="9" class="text-center text-muted p-3">
+                    جاري التحميل...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-outline-brown"
+            onclick="closeModal('modal-tasmeea-status-details')"
+          >
+            إغلاق
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. نافذة إضافة وتعديل حلقة -->
+    <div id="modal-add-circle" class="modal-overlay">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h3 id="modal-circle-title">إضافة حلقة جديدة بالدار</h3>
+          <button class="modal-close" onclick="closeModal('modal-add-circle')">
+            &times;
+          </button>
+        </div>
+        <form id="form-add-circle" onsubmit="handleSaveCircle(event)">
+          <input type="hidden" id="edit-circle-id" value="" />
+          <div class="modal-body">
+            <div class="form-group">
+              <label>اسم الحلقة</label
+              ><input
+                type="text"
+                id="circle-name"
+                class="form-control"
+                placeholder="مثال: حلقة النور"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label>المعلمات المكلفات بالحلقة:</label
+              ><input
+                type="text"
+                id="search-modal-teachers"
+                class="form-control search-input mb-1"
+                placeholder="🔍 ابحثي عن معلمة..."
+                oninput="filterCircleModalTeachers()"
+              />
+              <div
+                id="circle-teachers-list"
+                class="checkbox-list-container"
+              ></div>
+            </div>
+            <div class="form-group">
+              <label>الطالبات المشاركات في الحلقة:</label
+              ><input
+                type="text"
+                id="search-modal-students"
+                class="form-control search-input mb-1"
+                placeholder="🔍 ابحثي عن طالبة..."
+                oninput="filterCircleModalStudents()"
+              />
+              <div
+                id="circle-students-list"
+                class="checkbox-list-container"
+              ></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary" id="btn-save-circle">
+              حفظ الحلقة</button
+            ><button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="closeModal('modal-add-circle')"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 4. نافذة إضافة طالبة -->
+    <div id="modal-add-student" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>إضافة طالبة جديدة</h3>
+          <button class="modal-close" onclick="closeModal('modal-add-student')">
+            &times;
+          </button>
+        </div>
+        <form id="form-add-student" onsubmit="handleAddStudent(event)">
+          <div class="modal-body">
+            <div class="form-group">
+              <label>الاسم الرباعي للطالبة</label
+              ><input
+                type="text"
+                id="stu-name"
+                class="form-control"
+                placeholder="اسم الطالبة..."
+                required
+              />
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label>رقم هوية الطالبة</label
+                ><input
+                  type="text"
+                  id="stu-id"
+                  class="form-control"
+                  placeholder="السجل المدني..."
+                />
+              </div>
+              <div class="form-group flex-1">
+                <label>رقم جوال الطالبة</label
+                ><input
+                  type="tel"
+                  id="stu-phone"
+                  class="form-control"
+                  placeholder="05xxxxxxxx"
+                />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label>اسم ولي / ولية الأمر</label
+                ><input
+                  type="text"
+                  id="stu-parent-name"
+                  class="form-control"
+                  placeholder="اسم ولي / ولية الأمر..."
+                />
+              </div>
+              <div class="form-group flex-1">
+                <label>صلة القرابة</label
+                ><input
+                  type="text"
+                  id="stu-parent-relation"
+                  class="form-control"
+                  placeholder="أم / أب / أخت"
+                />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>رقم جوال ولي / ولية الأمر</label
+              ><input
+                type="tel"
+                id="stu-parent-phone"
+                class="form-control"
+                placeholder="05xxxxxxxx"
+              />
+            </div>
+            <div class="form-group">
+              <label>الحلقة</label
+              ><select id="stu-circle" class="form-control">
+                <option value="">— اختر الحلقة —</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">حفظ الطالبة</button
+            ><button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="closeModal('modal-add-student')"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 5. نافذة تعديل بيانات الطالبة -->
+    <div id="modal-edit-student-comprehensive" class="modal-overlay">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h3>تعديل بيانات الطالبة وحسابها</h3>
+          <button
+            class="modal-close"
+            onclick="closeModal('modal-edit-student-comprehensive')"
+          >
+            &times;
+          </button>
+        </div>
+        <form
+          id="form-edit-student-comp"
+          onsubmit="handleSaveStudentComprehensive(event)"
+        >
+          <input type="hidden" id="edit-comp-stu-id" value="" />
+          <div class="modal-body">
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label>الاسم الرباعي للطالبة</label
+                ><input
+                  type="text"
+                  id="edit-comp-name"
+                  class="form-control"
+                  required
+                />
+              </div>
+              <div class="form-group flex-1">
+                <label>رقم الهوية الوطنية</label
+                ><input
+                  type="text"
+                  id="edit-comp-national-id"
+                  class="form-control"
+                />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label>رقم جوال الطالبة</label
+                ><input type="tel" id="edit-comp-phone" class="form-control" />
+              </div>
+              <div class="form-group flex-1">
+                <label>رقم جوال ولي / ولية الأمر</label>
+                <input
+                  type="tel"
+                  id="edit-comp-parent-phone"
+                  class="form-control"
+                />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label>اسم ولي / ولية الأمر</label>
+                <input
+                  type="text"
+                  id="edit-comp-parent-name"
+                  class="form-control"
+                />
+              </div>
+              <div class="form-group flex-1">
+                <label>صلة القرابة</label>
+                <input
+                  type="text"
+                  id="edit-comp-parent-relation"
+                  class="form-control"
+                />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label>الحلقة المسجلة بها</label>
+                <select id="edit-comp-circle" class="form-control"></select>
+              </div>
+              <div class="form-group flex-1">
+                <label>حالة الطالبة</label
+                ><select id="edit-comp-status" class="form-control">
+                  <option value="active">🟢 نشطة</option>
+                  <option value="archived">🔴 موقوفة (مؤرشفة)</option>
+                </select>
+              </div>
+              <div class="form-group flex-1">
+                <label style="color: var(--primary-brown); font-weight: 800"
+                  >🔑 الرقم السري للطالبة</label
+                >
+                <input
+                  type="text"
+                  id="edit-comp-password"
+                  class="form-control"
+                  placeholder="كلمة المرور..."
+                />
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">حفظ التعديلات</button
+            ><button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="closeModal('modal-edit-student-comprehensive')"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 6. نافذة تعديل سجل الطالبة للمعلمة -->
+    <div id="modal-teacher-edit-student-record" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>تعديل سجل وتسميع الطالبة</h3>
+          <button
+            class="modal-close"
+            onclick="closeModal('modal-teacher-edit-student-record')"
+          >
+            &times;
+          </button>
+        </div>
+        <form
+          id="form-teacher-edit-student"
+          onsubmit="handleTeacherSaveStudentRecord(event)"
+        >
+          <input type="hidden" id="teacher-edit-stu-id" value="" />
+          <div class="modal-body">
+            <div class="form-group">
+              <label>اسم الطالبة</label
+              ><input
+                type="text"
+                id="teacher-edit-stu-name"
+                class="form-control"
+                readonly
+              />
+            </div>
+            <div class="form-group">
+              <label>حالة حضور اليوم</label
+              ><select id="teacher-edit-stu-att" class="form-control">
+                <option value="present">🟢 حاضرة</option>
+                <option value="absent">🔴 غائبة</option>
+                <option value="late">🟡 متأخرة</option>
+                <option value="excused">🔵 مستأذنة</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>ملاحظة المعلمة</label
+              ><textarea
+                id="teacher-edit-stu-notes"
+                class="form-control"
+                rows="3"
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">حفظ التعديل</button
+            ><button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="closeModal('modal-teacher-edit-student-record')"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 7. نافذة إضافة معلمة -->
+    <div id="modal-add-teacher" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>إضافة معلمة جديدة</h3>
+          <button class="modal-close" onclick="closeModal('modal-add-teacher')">
+            &times;
+          </button>
+        </div>
+        <form id="form-add-teacher" onsubmit="handleAddTeacher(event)">
+          <div class="modal-body">
+            <div class="form-group">
+              <label>اسم المعلمة</label
+              ><input
+                type="text"
+                id="teach-name"
+                class="form-control"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label>رقم الجوال</label
+              ><input
+                type="tel"
+                id="teach-phone"
+                class="form-control"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 0.5rem;
+                  cursor: pointer;
+                  font-weight: 700;
+                  color: var(--primary-brown);
+                "
+              >
+                <input
+                  type="checkbox"
+                  id="add-teach-is-finance"
+                  style="
+                    width: 18px;
+                    height: 18px;
+                    accent-color: var(--primary-brown);
+                  "
+                />
+                <span
+                  >💼 تعيين كمسؤولة مالية للدار (صلاحية التقارير المالية)</span
+                >
+              </label>
+            </div>
+            <div class="form-group">
+              <label>الحلقات المكلفة بها:</label>
+              <div
+                id="teacher-circles-checkbox-container"
+                class="checkbox-list-container"
+              ></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">حفظ المعلمة</button
+            ><button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="closeModal('modal-add-teacher')"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 8. نافذة تعديل بيانات المعلمة -->
+    <div id="modal-edit-teacher" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>تعديل بيانات المعلمة وحسابها</h3>
+          <button
+            class="modal-close"
+            onclick="closeModal('modal-edit-teacher')"
+          >
+            &times;
+          </button>
+        </div>
+        <form id="form-edit-teacher" onsubmit="handleSaveTeacherEdit(event)">
+          <input type="hidden" id="edit-teach-id" value="" />
+          <div class="modal-body">
+            <div class="form-group">
+              <label>اسم المعلمة</label
+              ><input
+                type="text"
+                id="edit-teach-name"
+                class="form-control"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label>رقم الجوال</label
+              ><input
+                type="tel"
+                id="edit-teach-phone"
+                class="form-control"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label style="color: var(--primary-brown); font-weight: 800"
+                >🔑 الرقم السري للمعلمة</label
+              >
+              <input
+                type="text"
+                id="edit-teach-password"
+                class="form-control"
+                placeholder="كلمة المرور..."
+              />
+            </div>
+            <div class="form-group">
+              <label
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 0.5rem;
+                  cursor: pointer;
+                  font-weight: 700;
+                  color: var(--primary-brown);
+                "
+              >
+                <input
+                  type="checkbox"
+                  id="edit-teach-is-finance"
+                  style="
+                    width: 18px;
+                    height: 18px;
+                    accent-color: var(--primary-brown);
+                  "
+                />
+                <span
+                  >💼 تعيين كمسؤولة مالية للدار (صلاحية التقارير المالية)</span
+                >
+              </label>
+            </div>
+            <div class="form-group">
+              <label>الحلقات المكلفة بها:</label>
+              <div
+                id="edit-teacher-circles-checkbox-container"
+                class="checkbox-list-container"
+              ></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">حفظ التعديلات</button
+            ><button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="closeModal('modal-edit-teacher')"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 9. نافذة تعديل بيانات الحساب -->
+    <div id="modal-edit-user-account" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>تعديل بيانات الحساب والرقم السري</h3>
+          <button
+            class="modal-close"
+            onclick="closeModal('modal-edit-user-account')"
+          >
+            &times;
+          </button>
+        </div>
+        <form
+          id="form-edit-user-account"
+          onsubmit="handleSaveUserAccount(event)"
+        >
+          <input type="hidden" id="edit-account-user-id" value="" />
+          <div class="modal-body">
+            <div class="form-group">
+              <label>الاسم الكامل</label
+              ><input
+                type="text"
+                id="edit-account-name"
+                class="form-control"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label>اسم المستخدم</label
+              ><input
+                type="text"
+                id="edit-account-username"
+                class="form-control"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label style="color: var(--primary-brown); font-weight: 800"
+                >الرقم السري الجديد</label
+              >
+              <input
+                type="text"
+                id="edit-account-password"
+                class="form-control"
+                placeholder="••••••••"
+              />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">حفظ التعديلات</button
+            ><button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="closeModal('modal-edit-user-account')"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 10. نافذة استيراد Excel -->
+    <div id="modal-excel-import" class="modal-overlay">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h3>📥 استيراد بيانات الطالبات من ملف Excel (7 أعمدة)</h3>
+          <button
+            class="modal-close"
+            onclick="closeModal('modal-excel-import')"
+          >
+            &times;
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted mb-2" style="font-size: 0.88rem">
+            يرجى التأكد من ترتيب الأعمدة في ملف Excel الخاص بك وفق الترتيب
+            القياسي التالي (7 أعمدة):
+          </p>
+          <div class="form-group">
+            <div
+              id="excel-columns-mapping-container"
+              style="
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                gap: 0.6rem;
+              "
+            ></div>
+          </div>
+          <div class="form-group mt-3">
+            <label>اختاري ملف Excel (.xlsx أو .xls):</label
+            ><input
+              type="file"
+              id="excel-dynamic-file"
+              class="form-control"
+              accept=".xlsx, .xls"
+            />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-primary"
+            onclick="executeDynamicExcelImport()"
+          >
+            بدء الاستيراد الفوري</button
+          ><button
+            type="button"
+            class="btn btn-outline-brown"
+            onclick="closeModal('modal-excel-import')"
+          >
+            إلغاء
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 11. نافذة إرسال رسالة / إشعار -->
+    <div id="modal-send-unified-msg" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>إرسال إشعار / رسالة جديدة</h3>
+          <button
+            class="modal-close"
+            onclick="closeModal('modal-send-unified-msg')"
+          >
+            &times;
+          </button>
+        </div>
+        <form
+          id="form-send-unified-msg"
+          onsubmit="handleSendUnifiedMessage(event)"
+        >
+          <div class="modal-body">
+            <div class="form-group nav-admin-only" id="msg-recipient-wrapper">
+              <label>المستهدف بالإشعار / الرسالة</label>
+              <select
+                id="msg-target-recipient"
+                class="form-control"
+                onchange="handleRecipientTypeChange(this)"
+              >
+                <option value="all">الجميع (الكل)</option>
+                <option value="teachers">جميع المعلمات</option>
+                <option value="students">جميع الطالبات</option>
+                <option value="specific_teacher">معلمة محددة</option>
+                <option value="specific_student">طالبة محددة</option>
+              </select>
+            </div>
+            <div
+              id="msg-specific-recipient-group"
+              class="form-group style-hidden"
+            >
+              <label id="msg-specific-label">اختاري الشخص المستهدف:</label
+              ><select id="msg-specific-select" class="form-control"></select>
+            </div>
+            <div class="form-group">
+              <label>عنوان الرسالة / الإشعار</label
+              ><input
+                type="text"
+                id="msg-title"
+                class="form-control"
+                placeholder="عنوان التنبيه..."
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label>نص الرسالة / التنبيه</label
+              ><textarea
+                id="msg-body"
+                class="form-control"
+                rows="3"
+                placeholder="اكتبي نص الرسالة هنا..."
+                required
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">إرسال الآن</button
+            ><button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="closeModal('modal-send-unified-msg')"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 12. نافذة الإجراءات الجماعية للحلقات -->
+    <div id="modal-bulk-circle" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>إضافة الطالبات المحددة إلى حلقة</h3>
+          <button class="modal-close" onclick="closeModal('modal-bulk-circle')">
+            &times;
+          </button>
+        </div>
+        <form id="form-bulk-circle" onsubmit="handleBulkCircleSubmit(event)">
+          <input type="hidden" id="bulk-circle-action-type" value="assign" />
+          <div class="modal-body">
+            <p
+              class="text-muted mb-2"
+              id="bulk-circle-desc"
+              style="font-size: 0.88rem"
+            >
+              اختاري الحلقة المراد إضافة الطالبات المحددة إليها:
+            </p>
+            <div class="form-group">
+              <label>الحلقة المستهدفة</label
+              ><select id="bulk-target-circle" class="form-control" required>
+                <option value="">— اختر الحلقة —</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="submit"
+              class="btn btn-primary"
+              id="btn-submit-bulk-circle"
+            >
+              تنفيذ</button
+            ><button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="closeModal('modal-bulk-circle')"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 13. استمارة التسجيل الذاتي -->
+    <div id="modal-self-register" class="modal-overlay">
+      <div class="modal-card word-doc-style">
+        <div class="modal-header">
+          <h3>استمارة طلب التحاق بدار المُهتدية النسائية</h3>
+          <button
+            class="modal-close"
+            onclick="closeModal('modal-self-register')"
+          >
+            &times;
+          </button>
+        </div>
+        <form id="form-self-register" onsubmit="handleSelfRegistration(event)">
+          <div class="modal-body">
+            <div class="word-page-container">
+              <div class="word-doc-header">
+                <h2>دار المُهتدية النسائية</h2>
+                <p>بجامع الهدى — استمارة تسجيل طالبة جديدة</p>
+              </div>
+
+              <div
+                style="
+                  background: #fbf8ff;
+                  border: 1.5px solid var(--primary-brown);
+                  border-radius: 6px;
+                  padding: 1.25rem;
+                  margin-bottom: 1.25rem;
+                  line-height: 1.7;
+                "
+              >
+                <h4
+                  style="
+                    color: var(--primary-brown);
+                    font-weight: 900;
+                    margin-bottom: 0.6rem;
+                    font-size: 1.05rem;
+                  "
+                >
+                  📜 شروط الالتحاق بالدار:
+                </h4>
+                <ol
+                  style="
+                    padding-right: 1.2rem;
+                    margin: 0;
+                    font-size: 0.92rem;
+                    color: #333;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.4rem;
+                  "
+                >
+                  <li>
+                    تبدأ الحلقات للفصل الدراسي الأول في الموعد المحدد للتقويم
+                    الدراسي.
+                  </li>
+                  <li>
+                    لا يحق للطالبة الغياب بدون عذر أكثر من 5 أيام خلال الفصل
+                    الدراسي.
+                  </li>
+                  <li>
+                    الالتزام بالحضور في الوقت المحدد وعدم التأخر عن الحلقة.
+                  </li>
+                  <li>التزام الطالبة بإحضار مصحفها الخاص والأدوات المطلوبة.</li>
+                  <li>المتابعة الجادة للحفظ والمراجعة اليومية.</li>
+                </ol>
+                <div
+                  style="
+                    text-align: center;
+                    margin-top: 1rem;
+                    padding-top: 0.75rem;
+                    border-top: 1px dashed #eedffc;
+                  "
+                >
+                  <p
+                    style="
+                      font-weight: 800;
+                      color: var(--primary-brown);
+                      margin-bottom: 4px;
+                    "
+                  >
+                    «الحلقات جادة ، و نتطلع لجديتكم ، والنوعيات إهتمامُنا»
+                  </p>
+                  <small style="color: #581c87; font-weight: 700">
+                    نرجوا لكنّ التوفيق والسداد
+                  </small>
+                </div>
+                <div
+                  style="
+                    margin-top: 1rem;
+                    background: #fff;
+                    padding: 0.75rem;
+                    border-radius: 4px;
+                    border: 1px solid var(--border-color);
+                  "
+                >
+                  <label
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 0.6rem;
+                      cursor: pointer;
+                      font-weight: 800;
+                      color: #1b5e20;
+                      margin: 0;
+                    "
+                  >
+                    <input
+                      type="checkbox"
+                      id="reg-terms-agree"
+                      style="width: 18px; height: 18px; accent-color: #2e7d32"
+                      required
+                    />
+                    <span>اطلعت على الشروط وأوافق عليها *</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="word-section-title">بيانات الطالبة الشخصية</div>
+              <div class="form-group">
+                <label
+                  >اسم الطالبة الثلاثي <span style="color: red">*</span></label
+                >
+                <input
+                  type="text"
+                  id="reg-stu-name"
+                  class="form-control"
+                  placeholder="إجابتكِ"
+                  required
+                />
+              </div>
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label
+                    >رقم هوية الطالبة <span style="color: red">*</span></label
+                  >
+                  <input
+                    type="text"
+                    id="reg-stu-id"
+                    class="form-control"
+                    placeholder="إجابتكِ"
+                    required
+                  />
+                </div>
+                <div class="form-group flex-1">
+                  <label>عمر الطالبة <span style="color: red">*</span></label>
+                  <input
+                    type="number"
+                    id="reg-stu-age"
+                    class="form-control"
+                    placeholder="إجابتكِ"
+                    min="5"
+                    max="80"
+                    required
+                  />
+                </div>
+              </div>
+              <div class="form-group">
+                <label style="font-weight: 800"
+                  >الالتحاق سابقاً بحلقات أو دور قرآنية
+                  <span style="color: red">*</span></label
+                >
+                <div
+                  style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.5rem;
+                    margin-top: 0.4rem;
+                    padding: 0.75rem;
+                    background: #fdfdfd;
+                    border: 1px solid var(--border-color);
+                    border-radius: 4px;
+                  "
+                >
+                  <label
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 0.5rem;
+                      cursor: pointer;
+                      margin: 0;
+                    "
+                  >
+                    <input
+                      type="radio"
+                      name="reg_prev_study"
+                      value="دار المُهتدية النسائية"
+                      required
+                    />
+                    <span>دار المُهتدية النسائية (جامع الهدى)</span>
+                  </label>
+                  <label
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 0.5rem;
+                      cursor: pointer;
+                      margin: 0;
+                    "
+                  >
+                    <input
+                      type="radio"
+                      name="reg_prev_study"
+                      value="دور وحلقات أخرى"
+                    />
+                    <span>دور وحلقات أخرى</span>
+                  </label>
+                </div>
+              </div>
+              <div class="form-group">
+                <label style="font-weight: 800">
+                  مقدار الحفظ لمن سبق لها الالتحاق بأي حلقات أخرى
+                  <span style="color: red">*</span><br />
+                  <small style="color: #666; font-weight: normal"
+                    >تكون الإجابة بهذه الطريقة من سورة ( ........... ) إلى سورة
+                    ( ............. )</small
+                  >
+                </label>
+                <input
+                  type="text"
+                  id="reg-hifz-amount"
+                  class="form-control"
+                  placeholder="إجابتكِ"
+                  required
+                />
+              </div>
+
+              <div class="word-section-title">
+                بيانات ولي / ولية الأمر والتواصل
+              </div>
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label
+                    >اسم ولي / ولية الأمر
+                    <span style="color: red">*</span></label
+                  >
+                  <input
+                    type="text"
+                    id="reg-parent-name"
+                    class="form-control"
+                    placeholder="إجابتكِ"
+                    required
+                  />
+                </div>
+                <div class="form-group flex-1">
+                  <label
+                    >رقم جوال التواصل <span style="color: red">*</span>
+                    <small style="color: #777"
+                      >(يكتب بالصيغة 05xxxxxxxx)</small
+                    ></label
+                  >
+                  <input
+                    type="tel"
+                    id="reg-parent-phone"
+                    class="form-control"
+                    placeholder="إجابتكِ"
+                    required
+                  />
+                </div>
+              </div>
+              <div class="form-group">
+                <label style="font-weight: 800"
+                  >صلة القرابة <span style="color: red">*</span></label
+                >
+                <div
+                  style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.5rem;
+                    margin-top: 0.4rem;
+                    padding: 0.75rem;
+                    background: #fdfdfd;
+                    border: 1px solid var(--border-color);
+                    border-radius: 4px;
+                  "
+                >
+                  <label
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 0.5rem;
+                      cursor: pointer;
+                      margin: 0;
+                    "
+                  >
+                    <input
+                      type="radio"
+                      name="reg_parent_relation"
+                      value="أم"
+                      required
+                      onclick="
+                        document.getElementById(
+                          'reg-relation-other-text',
+                        ).style.display = 'none'
+                      "
+                    /><span>أم</span>
+                  </label>
+                  <label
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 0.5rem;
+                      cursor: pointer;
+                      margin: 0;
+                    "
+                  >
+                    <input
+                      type="radio"
+                      name="reg_parent_relation"
+                      value="أب"
+                      onclick="
+                        document.getElementById(
+                          'reg-relation-other-text',
+                        ).style.display = 'none'
+                      "
+                    /><span>أب</span>
+                  </label>
+                  <label
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 0.5rem;
+                      cursor: pointer;
+                      margin: 0;
+                    "
+                  >
+                    <input
+                      type="radio"
+                      name="reg_parent_relation"
+                      value="أخت"
+                      onclick="
+                        document.getElementById(
+                          'reg-relation-other-text',
+                        ).style.display = 'none'
+                      "
+                    /><span>أخت</span>
+                  </label>
+                  <label
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 0.5rem;
+                      cursor: pointer;
+                      margin: 0;
+                    "
+                  >
+                    <input
+                      type="radio"
+                      name="reg_parent_relation"
+                      value="أخرى"
+                      onclick="
+                        document.getElementById(
+                          'reg-relation-other-text',
+                        ).style.display = 'block'
+                      "
+                    /><span>أخرى:</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="reg-relation-other-text"
+                    class="form-control mt-1"
+                    placeholder="حددي صلة القرابة..."
+                    style="display: none"
+                  />
+                </div>
+              </div>
+              <div class="form-group">
+                <label
+                  >مكان السكن ( أو الحي )
+                  <span style="color: red">*</span></label
+                >
+                <input
+                  type="text"
+                  id="reg-residence"
+                  class="form-control"
+                  placeholder="إجابتكِ"
+                  required
+                />
+              </div>
+              <div
+                class="form-group"
+                style="
+                  background: #fbf8ff;
+                  border: 1px solid #eedffc;
+                  border-radius: 4px;
+                  padding: 1rem;
+                "
+              >
+                <label style="font-weight: 900; color: var(--primary-brown)"
+                  >تعهد <span style="color: red">*</span></label
+                >
+                <label
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 0.6rem;
+                    cursor: pointer;
+                    margin-top: 0.5rem;
+                    font-weight: 700;
+                    color: #333;
+                  "
+                >
+                  <input
+                    type="checkbox"
+                    id="reg-pledge-agree"
+                    style="width: 18px; height: 18px; accent-color: #2e7d32"
+                    required
+                  />
+                  <span
+                    >أتعهد بصحة البيانات وتحمل مسؤولية الإدلاء بمعلومات
+                    خاطئة</span
+                  >
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">
+              إرسال طلب الالتحاق
+            </button>
+            <button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="closeModal('modal-self-register')"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ملفات النظام البرمجية -->
+    <script src="config.js"></script>
+    <script src="firebase.js"></script>
+    <script src="tasmeea.js"></script>
+    <script src="admin.js"></script>
+    <script src="reports.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
