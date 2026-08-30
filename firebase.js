@@ -1,6 +1,6 @@
 /**
  * ==========================================================================
- * firebase.js - محرك الاتصال بـ Firebase، التصفير السحابي والمحلي للسجلات، وحماية البيانات الأساسية
+ * firebase.js - محرك الاتصال بـ Firebase والمزامنة السحابية الفورية بين الأجهزة
  * دار المُهتدية النسائية — جامع الهدى
  * ==========================================================================
  */
@@ -14,9 +14,9 @@ const SAFE_DEFAULT_SETTINGS = window.DEFAULT_SETTINGS || {
   orgName: "دار المُهتدية النسائية",
   subTitle: "جامع الهدى",
   directorName: "المديرة",
-  logoNew: "logo222.png.jpeg",
+  logoNew: "logo12.jpeg",
   logoOld: "",
-  logoLogin: "logo333.png.jpeg",
+  logoLogin: "logo111.png",
   headerFontSize: "13px",
   location: "",
 };
@@ -67,7 +67,7 @@ function initFirebaseApp() {
       dbFirestore = firebase.firestore();
       firebaseAuth = firebase.auth();
       isFirebaseOnline = true;
-      console.log("✅ تم الاتصال بـ Firebase بنجاح (دار المُهتدية النسائية)");
+      console.log("✅ تم الاتصال بقاعدة بيانات دار المُهتدية النسائية بنجاح");
     } else {
       console.warn("⚠️ مكتبات Firebase غير محملة. تم استخدام التخزين المحلي.");
       isFirebaseOnline = false;
@@ -83,94 +83,13 @@ function initFirebaseApp() {
   loadInitialData();
 }
 
-// تحميل البيانات والتحقق من حساب المديرة وتصفير السجلات التشغيلية مع الحفاظ على البيانات الأساسية
+// تحميل البيانات وربط المزامنة الفورية
 function loadInitialData() {
   const localData = localStorage.getItem(STORAGE_KEY);
   if (localData) {
     try {
       const parsedData = JSON.parse(localData);
       window.appStore = Object.assign(window.appStore, parsedData);
-
-      if (!Array.isArray(window.appStore.users)) window.appStore.users = [];
-      if (!Array.isArray(window.appStore.students))
-        window.appStore.students = [];
-      if (!Array.isArray(window.appStore.teachers))
-        window.appStore.teachers = [];
-      if (!Array.isArray(window.appStore.circles)) window.appStore.circles = [];
-      if (!Array.isArray(window.appStore.logs)) window.appStore.logs = [];
-
-      // 1. تصفير السجلات التشغيلية محلياً مع الحفاظ التام على الطالبات والمعلمات والحلقات والإعدادات
-      const resetFlagKey = "HALAQAT_PURGE_RESET_EXEC_V4";
-      if (!localStorage.getItem(resetFlagKey)) {
-        window.appStore.attendance = [];
-        window.appStore.teacherAttendance = [];
-        window.appStore.tasmeea = [];
-        window.appStore.tests = [];
-        window.appStore.notifications = [];
-        window.appStore.messages = [];
-        window.appStore.screenOrder = [];
-        localStorage.setItem(resetFlagKey, "true");
-        console.log(
-          "🧹 تم تصفير سجلات التحضير والتسميع والاختبارات والإشعارات والتميز محلياً مع حماية الطالبات والمعلمات والحلقات.",
-        );
-      } else {
-        if (!Array.isArray(window.appStore.attendance))
-          window.appStore.attendance = [];
-        if (!Array.isArray(window.appStore.teacherAttendance))
-          window.appStore.teacherAttendance = [];
-        if (!Array.isArray(window.appStore.tasmeea))
-          window.appStore.tasmeea = [];
-        if (!Array.isArray(window.appStore.tests)) window.appStore.tests = [];
-        if (!Array.isArray(window.appStore.notifications))
-          window.appStore.notifications = [];
-        if (!Array.isArray(window.appStore.messages))
-          window.appStore.messages = [];
-        if (!Array.isArray(window.appStore.screenOrder))
-          window.appStore.screenOrder = [];
-      }
-
-      // 2. ضمان وجود حساب المديرة وحساب الشاشة
-      let adminUser = window.appStore.users.find(
-        (u) =>
-          (u.username === "123456" || u.username === "admin") &&
-          u.role === SAFE_ROLES.ADMIN,
-      );
-
-      if (!adminUser) {
-        window.appStore.users.push({
-          id: "u_admin_main",
-          name: "المديرة",
-          role: SAFE_ROLES.ADMIN,
-          username: "123456",
-          pass: "1234",
-          phone: "0500000000",
-          status: "active",
-          createdAt: Date.now(),
-        });
-      } else {
-        adminUser.name = "المديرة";
-      }
-
-      const hasScreen = window.appStore.users.some(
-        (u) => u.username === "121212" && u.role === SAFE_ROLES.SCREEN,
-      );
-
-      if (!hasScreen) {
-        window.appStore.users.push({
-          id: "u_screen_fixed",
-          name: "نجمات التميز",
-          role: SAFE_ROLES.SCREEN,
-          username: "121212",
-          pass: "1234",
-          phone: "0500000000",
-          status: "active",
-          createdAt: Date.now(),
-        });
-      }
-
-      // 3. توحيد الأرقام السرية: 1111 للطالبات و 1234 للمعلمات
-      migrateAllPasswordsRoleBased();
-      saveLocalStore();
     } catch (e) {
       console.error("خطأ في قراءة LocalStorage:", e);
       seedProductionAdminOnly();
@@ -179,13 +98,73 @@ function loadInitialData() {
     seedProductionAdminOnly();
   }
 
-  // مزامنة وتنظيف البيانات السحابية من Firestore
+  // ضمان سلامة المصفوفات
+  if (!Array.isArray(window.appStore.users)) window.appStore.users = [];
+  if (!Array.isArray(window.appStore.students)) window.appStore.students = [];
+  if (!Array.isArray(window.appStore.teachers)) window.appStore.teachers = [];
+  if (!Array.isArray(window.appStore.circles)) window.appStore.circles = [];
+  if (!Array.isArray(window.appStore.attendance)) window.appStore.attendance = [];
+  if (!Array.isArray(window.appStore.teacherAttendance)) window.appStore.teacherAttendance = [];
+  if (!Array.isArray(window.appStore.tasmeea)) window.appStore.tasmeea = [];
+  if (!Array.isArray(window.appStore.tests)) window.appStore.tests = [];
+  if (!Array.isArray(window.appStore.notifications)) window.appStore.notifications = [];
+  if (!Array.isArray(window.appStore.messages)) window.appStore.messages = [];
+  if (!Array.isArray(window.appStore.screenOrder)) window.appStore.screenOrder = [];
+  if (!Array.isArray(window.appStore.logs)) window.appStore.logs = [];
+
+  // التأكد من وجود الحسابات الرئيسية
+  ensureDefaultAccounts();
+  migrateAllPasswordsRoleBased();
+  saveLocalStore();
+
+  // تفعيل المزامنة اللحظية السحابية مع Firestore
   if (isFirebaseOnline && dbFirestore) {
-    syncAndPurgeDataFromCloud();
+    setupRealtimeCloudSync();
   }
 }
 
-// دالة توحيد الرقم السري (1111 للطالبات و 1234 للمعلمات) لجميع الحسابات
+// إنشاء الحسابات الافتراضية
+function ensureDefaultAccounts() {
+  let adminUser = window.appStore.users.find(
+    (u) =>
+      (u.username === "123456" || u.username === "admin") &&
+      u.role === SAFE_ROLES.ADMIN,
+  );
+
+  if (!adminUser) {
+    window.appStore.users.push({
+      id: "u_admin_main",
+      name: "المديرة",
+      role: SAFE_ROLES.ADMIN,
+      username: "123456",
+      pass: "1234",
+      phone: "0500000000",
+      status: "active",
+      createdAt: Date.now(),
+    });
+  } else {
+    adminUser.name = "المديرة";
+  }
+
+  const hasScreen = window.appStore.users.some(
+    (u) => u.username === "121212" && u.role === SAFE_ROLES.SCREEN,
+  );
+
+  if (!hasScreen) {
+    window.appStore.users.push({
+      id: "u_screen_fixed",
+      name: "نجمات التميز",
+      role: SAFE_ROLES.SCREEN,
+      username: "121212",
+      pass: "1234",
+      phone: "0500000000",
+      status: "active",
+      createdAt: Date.now(),
+    });
+  }
+}
+
+// دالة توحيد الرقم السري (1111 للطالبات و 1234 للمعلمات)
 function migrateAllPasswordsRoleBased() {
   let hasChanges = false;
   if (Array.isArray(window.appStore.users)) {
@@ -234,9 +213,6 @@ function migrateAllPasswordsRoleBased() {
   }
 
   if (hasChanges) {
-    console.log(
-      "🔐 تم توحيد الرقم السري للطالبات إلى (1111) والمعلمات إلى (1234) بنجاح.",
-    );
     saveLocalStore();
   }
 }
@@ -250,7 +226,7 @@ function saveLocalStore() {
   }
 }
 
-// إنشاء الحسابات النظيفة الافتراضية
+// تهيئة البيانات النظيفة
 function seedProductionAdminOnly() {
   const baseTime = Date.now();
   window.appStore = {
@@ -301,12 +277,15 @@ function seedProductionAdminOnly() {
   saveLocalStore();
 }
 
-// تصفير المجموعات السحابية ومزامنة البيانات الأساسية فقط
-async function syncAndPurgeDataFromCloud() {
+// المزامنة اللحظية التلقائية من السحابة لجميع الأجهزة (كمبيوتر وجوال)
+function setupRealtimeCloudSync() {
   if (!dbFirestore) return;
 
-  const cloudPurgeFlag = "HALAQAT_CLOUD_PURGE_EXEC_V4";
-  const collectionsToPurge = [
+  const allCollections = [
+    "users",
+    "students",
+    "teachers",
+    "circles",
     "attendance",
     "teacherAttendance",
     "tasmeea",
@@ -314,85 +293,48 @@ async function syncAndPurgeDataFromCloud() {
     "notifications",
     "messages",
     "screenOrder",
+    "settings",
+    "logs",
   ];
 
-  // تنفيذ تصفير السحابة مرة واحدة للسجلات الماضية
-  if (!localStorage.getItem(cloudPurgeFlag)) {
-    for (const colName of collectionsToPurge) {
-      try {
-        const snapshot = await dbFirestore.collection(colName).get();
-        if (!snapshot.empty) {
-          const batch = dbFirestore.batch();
-          snapshot.docs.forEach((d) => {
-            batch.delete(d.ref);
-          });
-          await batch.commit();
-          console.log(
-            `🧹 تم مسح مستندات (${colName}) القديمة من Firestore سحابياً.`,
-          );
-        }
-      } catch (err) {
-        console.warn(`تنبيه أثناء مسح ${colName}:`, err);
-      }
-    }
-    localStorage.setItem(cloudPurgeFlag, "true");
-  }
+  allCollections.forEach((colName) => {
+    try {
+      dbFirestore.collection(colName).onSnapshot(
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const items = snapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+            }));
 
-  // مزامنة المجموعات الأساسية المحمية فقط (الطالبات، المعلمات، الحلقات، الحسابات، الإعدادات)
-  try {
-    const protectedCollections = [
-      "users",
-      "students",
-      "teachers",
-      "circles",
-      "settings",
-      "logs",
-    ];
-    for (const col of protectedCollections) {
-      const snapshot = await dbFirestore.collection(col).get();
-      if (!snapshot.empty) {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        if (col === "settings") {
-          window.appStore.settings = items[0] || SAFE_DEFAULT_SETTINGS;
-        } else {
-          window.appStore[col] = items;
-        }
-      }
-    }
+            if (colName === "settings") {
+              window.appStore.settings = items[0] || SAFE_DEFAULT_SETTINGS;
+              if (typeof applyAppIdentity === "function") applyAppIdentity();
+            } else if (colName === "screenOrder") {
+              window.appStore.screenOrder = items[0]?.order || [];
+            } else {
+              window.appStore[colName] = items;
+            }
 
-    // مزامنة المجموعات التشغيلية الجديدة
-    for (const col of collectionsToPurge) {
-      const snapshot = await dbFirestore.collection(col).get();
-      if (!snapshot.empty) {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        if (col === "screenOrder") {
-          window.appStore.screenOrder = items[0]?.order || [];
-        } else {
-          window.appStore[col] = items;
-        }
-      }
-    }
+            saveLocalStore();
 
-    migrateAllPasswordsRoleBased();
-    saveLocalStore();
-    if (typeof refreshActiveView === "function") {
-      refreshActiveView();
+            // تحديث الشاشة النشطة تلقائياً عند وصول أي تعديل
+            if (typeof refreshAllViews === "function") {
+              refreshAllViews();
+            }
+          }
+        },
+        (error) => {
+          console.warn(`تنبيه أثناء الاستماع لمجموعة (${colName}):`, error);
+        },
+      );
+    } catch (err) {
+      console.warn(`خطأ في ربط المزامنة لـ ${colName}:`, err);
     }
-  } catch (err) {
-    console.warn(
-      "لم تتم المزامنة مع Firestore، تم الاعتماد على النسخة المحلية:",
-      err,
-    );
-  }
+  });
 }
 
-// دالة تنفيذ التصفير اليدوي الآمن عند طلب الإدارة
+// دالة تنفيذ التصفير اليدوي الآمن عند طلب الإدارة فقط
 window.executeSafeOperationalReset = async function () {
   const confirmAction = confirm(
     "هل أنتِ متأكدة من تصفير سجلات التحضير والتسميع والاختبارات والإشعارات السابقة؟\n(الطالبات والمعلمات والحلقات لن تتأثر نهائياً).",
@@ -438,7 +380,7 @@ window.executeSafeOperationalReset = async function () {
   if (typeof refreshAllViews === "function") refreshAllViews();
 };
 
-// حفظ أو حذف مستند في السحابة بأمان وضمان عدم فقدان تعديلات المديرة
+// حفظ أو حذف مستند في السحابة بأمان فوري
 async function saveToCloud(collectionName, docId, data, isDelete = false) {
   saveLocalStore();
   if (isFirebaseOnline && dbFirestore) {
