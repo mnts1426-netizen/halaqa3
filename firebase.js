@@ -326,6 +326,23 @@ window.autoMigrateLocalDataToCloud = async function () {
   console.warn(
     "🔍 [DIAG] ⚠️⚠️ autoMigrateLocalDataToCloud بدأت التنفيذ الآن — سيتم كتابة كل البيانات المحلية على السحابة!",
   );
+  dbFirestore
+    .collection("meta")
+    .doc("lastWriteDebug")
+    .set(
+      {
+        collectionName: "(( ترحيل جماعي كامل autoMigrateLocalDataToCloud ))",
+        docId: "-",
+        isDelete: false,
+        userAgent: navigator.userAgent,
+        currentUser:
+          (window.currentUser && window.currentUser.name) || "غير مسجل دخول",
+        at: Date.now(),
+        atReadable: new Date().toLocaleString("ar-SA"),
+      },
+      { merge: true },
+    )
+    .catch(() => {});
 
   const collectionsToSync = [
     "users",
@@ -527,6 +544,32 @@ async function saveToCloud(collectionName, docId, data, isDelete = false) {
     `🔍 [DIAG] ${new Date().toLocaleTimeString("ar-SA")} — ${isDelete ? "حذف" : "كتابة"} في [${collectionName}] docId=${docId}`,
   );
   saveLocalStore();
+
+  // ===== تشخيص مؤقت: تسجيل "بصمة" آخر جهاز/متصفح قام بالكتابة =====
+  // يُحذف هذا الجزء لاحقاً بعد إيجاد سبب الكتابة المستمرة. يتيح لك
+  // معرفة مصدر أي عملية كتابة مباشرة من Firebase Console (مستند
+  // meta/lastWriteDebug) دون الحاجة لفحص كل جهاز يدوياً.
+  if (isFirebaseOnline && dbFirestore) {
+    dbFirestore
+      .collection("meta")
+      .doc("lastWriteDebug")
+      .set(
+        {
+          collectionName,
+          docId: String(docId),
+          isDelete: !!isDelete,
+          userAgent: navigator.userAgent,
+          currentUser:
+            (window.currentUser && window.currentUser.name) ||
+            "غير مسجل دخول",
+          at: Date.now(),
+          atReadable: new Date().toLocaleString("ar-SA"),
+        },
+        { merge: true },
+      )
+      .catch(() => {});
+  }
+
   if (isFirebaseOnline && dbFirestore) {
     try {
       if (isDelete) {
