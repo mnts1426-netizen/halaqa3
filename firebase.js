@@ -108,6 +108,7 @@ function loadInitialData() {
   // تفعيل المزامنة اللحظية الخفيفة
   if (isFirebaseOnline && dbFirestore) {
     setupRealtimeCloudSync();
+    watchForAppUpdates();
 
     // ترحيل البيانات إلى السحابة مرة واحدة فقط إذا لم يسبق ترحيلها.
     // يتم التحقق محلياً أولاً (سريع، بدون قراءة)، ثم مركزياً من Firestore
@@ -351,6 +352,40 @@ window.autoMigrateLocalDataToCloud = async function () {
     console.error("خطأ أثناء ترحيل البيانات السحابية:", err);
   }
 };
+
+// ===== نظام كشف التحديثات التلقائي =====
+// عند عمل إصلاح مهم مستقبلاً: غيّري القيمة التالية إلى نص جديد مختلف
+// (مثلاً تاريخ اليوم)، ثم بعد النشر حدّثي حقل "latest" في مستند
+// meta/appVersion على Firestore ليطابق نفس القيمة. عندها أي جهاز
+// يشغّل نسخة قديمة سيكتشف ذلك فوراً (بدون انتظار) ويُعيد تحميل
+// الصفحة تلقائياً، فيحصل على آخر إصلاحات الكود دون أي تدخل يدوي.
+const APP_BUILD_VERSION = "2026-08-31-1";
+
+function watchForAppUpdates() {
+  if (!dbFirestore) return;
+  try {
+    dbFirestore
+      .collection("meta")
+      .doc("appVersion")
+      .onSnapshot(
+        (doc) => {
+          if (!doc.exists) return;
+          const latest = doc.data().latest;
+          if (latest && latest !== APP_BUILD_VERSION) {
+            console.warn(
+              "⚠️ يوجد إصدار أحدث من التطبيق، سيتم تحديث الصفحة تلقائياً...",
+            );
+            window.location.reload();
+          }
+        },
+        (error) => {
+          console.warn("تنبيه أثناء التحقق من إصدار التطبيق:", error);
+        },
+      );
+  } catch (err) {
+    console.warn("خطأ في تفعيل التحقق من إصدار التطبيق:", err);
+  }
+}
 
 // المزامنة اللحظية الذكية بدون تكرار الحلقات
 function setupRealtimeCloudSync() {
