@@ -108,14 +108,43 @@ function loadInitialData() {
   // تفعيل المزامنة اللحظية الخفيفة
   if (isFirebaseOnline && dbFirestore) {
     setupRealtimeCloudSync();
-    
-    // ترحيل البيانات إلى السحابة مرة واحدة فقط إذا لم يسبق ترحيلها
+
+    // ترحيل البيانات إلى السحابة مرة واحدة فقط إذا لم يسبق ترحيلها.
+    // يتم التحقق محلياً أولاً (سريع، بدون قراءة)، ثم مركزياً من Firestore
+    // نفسه، حتى لا يُعاد الترحيل الكامل من أي جهاز/متصفح جديد يفتح
+    // التطبيق لأول مرة (وهو ما كان يسبب طفرات كبيرة في عمليات الكتابة).
     const migrationDoneKey = "HALAQAT_MIGRATION_COMPLETED_V1";
     if (!localStorage.getItem(migrationDoneKey)) {
-      autoMigrateLocalDataToCloud().then(() => {
-        localStorage.setItem(migrationDoneKey, "true");
-      });
+      checkAndRunCloudMigration(migrationDoneKey);
     }
+  }
+}
+
+// تحقق مركزي (قراءة واحدة فقط) من حالة الترحيل قبل تنفيذه، لمنع تكراره
+// من كل جهاز/متصفح جديد. لا يُغيّر أي سلوك آخر في التطبيق.
+async function checkAndRunCloudMigration(migrationDoneKey) {
+  try {
+    const statusDoc = await dbFirestore
+      .collection("meta")
+      .doc("migrationStatus")
+      .get();
+
+    if (statusDoc.exists && statusDoc.data().migrated === true) {
+      // تم الترحيل مسبقاً من جهاز آخر، فقط سجّل ذلك محلياً وتجاهل التكرار
+      localStorage.setItem(migrationDoneKey, "true");
+      return;
+    }
+
+    await autoMigrateLocalDataToCloud();
+
+    await dbFirestore
+      .collection("meta")
+      .doc("migrationStatus")
+      .set({ migrated: true, migratedAt: Date.now() }, { merge: true });
+
+    localStorage.setItem(migrationDoneKey, "true");
+  } catch (e) {
+    console.warn("⚠️ تعذر التحقق من حالة الترحيل السحابي:", e);
   }
 }
 
@@ -266,6 +295,7 @@ function seedProductionAdminOnly() {
         userName: "المديرة",
         action: "تهيئة النظام وتدشين الحسابات لدار المُهتدية النسائية",
         timestamp: new Date().toLocaleDateString("ar-SA"),
+        createdAt: baseTime,
       },
     ],
   };
@@ -327,6 +357,11 @@ function setupRealtimeCloudSync() {
   if (!dbFirestore || isSyncInitialized) return;
   isSyncInitialized = true;
 
+  // ملاحظة: "logs" غير موجودة هنا عمداً. لا توجد أي شاشة في التطبيق
+  // تعرض سجل العمليات (تم التأكد من ذلك في admin.js)، وبالتالي فإن
+  // مزامنته اللحظية الكاملة كانت تستهلك قراءات دون أي استخدام فعلي.
+  // الكتابة إلى logs عبر addSystemLog تبقى تماماً كما هي، والسجل الكامل
+  // يبقى محفوظاً بأمان في Firestore ويمكن مراجعته منه مباشرة كالمعتاد.
   const allCollections = [
     "users",
     "students",
@@ -340,7 +375,6 @@ function setupRealtimeCloudSync() {
     "messages",
     "screenOrder",
     "settings",
-    "logs",
   ];
 
   allCollections.forEach((colName) => {
@@ -369,7 +403,9 @@ function setupRealtimeCloudSync() {
 
             // تحديث الواجهة فقط إذا كان المستخدم مسجلاً للدخول بالفعل
             if (window.currentUser && typeof refreshActiveView === "function") {
-              const activeView = document.querySelector(".content-view.active")?.id;
+              const activeView = document.querySelector(
+                ".content-view.active",
+              )?.id;
               if (activeView) refreshActiveView(activeView);
             }
           }
@@ -436,7 +472,10 @@ async function saveToCloud(collectionName, docId, data, isDelete = false) {
   if (isFirebaseOnline && dbFirestore) {
     try {
       if (isDelete) {
-        await dbFirestore.collection(collectionName).doc(String(docId)).delete();
+        await dbFirestore
+          .collection(collectionName)
+          .doc(String(docId))
+          .delete();
       } else {
         await dbFirestore
           .collection(collectionName)
@@ -453,17 +492,21 @@ async function saveToCloud(collectionName, docId, data, isDelete = false) {
 }
 
 // تسجيل عملية جديدة في سجل العمليات Logs
+let __lastLogSignature = null;
+let __lastLogSignatureTime = 0;
+
 function addSystemLog(actionDesc) {
   const currentUser = window.currentUser || { name: "النظام" };
   const now = new Date();
   const timeString = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()} ${now.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}`;
+  const nowMs = Date.now();
 
   const newLog = {
-    id: "log_" + Date.now(),
+    id: "log_" + nowMs,
     userName: currentUser.name,
     action: actionDesc,
     timestamp: timeString,
-    createdAt: Date.now(),
+    createdAt: nowMs,
   };
 
   if (!Array.isArray(window.appStore.logs)) window.appStore.logs = [];
@@ -471,6 +514,20 @@ function addSystemLog(actionDesc) {
   if (window.appStore.logs.length > 200) {
     window.appStore.logs.pop();
   }
+
+  // حماية بسيطة: إذا تكرر نفس الإجراء لنفس المستخدم خلال أقل من ثانية
+  // (وهو ما لا يحدث في الاستخدام الطبيعي)، يتم تجاهل الرفع للسحابة فقط
+  // لمنع أي حلقة غير مقصودة من إغراق حصة الكتابة، دون التأثير على
+  // السجل المحلي أو على أي استخدام طبيعي للتطبيق.
+  const signature = currentUser.name + "|" + actionDesc;
+  if (
+    signature === __lastLogSignature &&
+    nowMs - __lastLogSignatureTime < 1000
+  ) {
+    return;
+  }
+  __lastLogSignature = signature;
+  __lastLogSignatureTime = nowMs;
 
   saveToCloud("logs", newLog.id, newLog);
 }
