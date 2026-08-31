@@ -124,18 +124,28 @@ function loadInitialData() {
 // تحقق مركزي (قراءة واحدة فقط) من حالة الترحيل قبل تنفيذه، لمنع تكراره
 // من كل جهاز/متصفح جديد. لا يُغيّر أي سلوك آخر في التطبيق.
 async function checkAndRunCloudMigration(migrationDoneKey) {
+  console.log("🔍 [DIAG] بدء فحص حالة الترحيل مركزياً من Firestore...");
   try {
     const statusDoc = await dbFirestore
       .collection("meta")
       .doc("migrationStatus")
       .get();
 
+    console.log(
+      "🔍 [DIAG] نتيجة فحص meta/migrationStatus:",
+      statusDoc.exists ? statusDoc.data() : "المستند غير موجود",
+    );
+
     if (statusDoc.exists && statusDoc.data().migrated === true) {
       // تم الترحيل مسبقاً من جهاز آخر، فقط سجّل ذلك محلياً وتجاهل التكرار
+      console.log("🔍 [DIAG] الترحيل تم مسبقاً، لن يُعاد تنفيذه.");
       localStorage.setItem(migrationDoneKey, "true");
       return;
     }
 
+    console.warn(
+      "🔍 [DIAG] لم يتم الترحيل مسبقاً حسب Firestore — سيبدأ الترحيل الكامل الآن...",
+    );
     await autoMigrateLocalDataToCloud();
 
     await dbFirestore
@@ -143,9 +153,16 @@ async function checkAndRunCloudMigration(migrationDoneKey) {
       .doc("migrationStatus")
       .set({ migrated: true, migratedAt: Date.now() }, { merge: true });
 
+    console.log("🔍 [DIAG] تم تسجيل اكتمال الترحيل مركزياً في meta/migrationStatus.");
+
     localStorage.setItem(migrationDoneKey, "true");
   } catch (e) {
-    console.warn("⚠️ تعذر التحقق من حالة الترحيل السحابي:", e);
+    console.error(
+      "🔍 [DIAG] ⚠️ فشل فحص/تنفيذ الترحيل — الكود:",
+      e.code,
+      "| الرسالة:",
+      e.message,
+    );
   }
 }
 
@@ -306,6 +323,9 @@ function seedProductionAdminOnly() {
 // ترحيل البيانات إلى السحابة بحزم مجمعة (Batch) لتقليل عمليات الكتابة
 window.autoMigrateLocalDataToCloud = async function () {
   if (!dbFirestore) return;
+  console.warn(
+    "🔍 [DIAG] ⚠️⚠️ autoMigrateLocalDataToCloud بدأت التنفيذ الآن — سيتم كتابة كل البيانات المحلية على السحابة!",
+  );
 
   const collectionsToSync = [
     "users",
@@ -503,6 +523,9 @@ window.executeSafeOperationalReset = async function () {
 
 // حفظ أو حذف مستند في السحابة بأمان فوري مع إظهار تنبيه في حال حدوث خطأ
 async function saveToCloud(collectionName, docId, data, isDelete = false) {
+  console.log(
+    `🔍 [DIAG] ${new Date().toLocaleTimeString("ar-SA")} — ${isDelete ? "حذف" : "كتابة"} في [${collectionName}] docId=${docId}`,
+  );
   saveLocalStore();
   if (isFirebaseOnline && dbFirestore) {
     try {
