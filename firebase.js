@@ -8,6 +8,7 @@
 let dbFirestore = null;
 let firebaseAuth = null;
 let isFirebaseOnline = false;
+let isSyncInitialized = false;
 
 // الإعدادات الافتراضية
 const SAFE_DEFAULT_SETTINGS = window.DEFAULT_SETTINGS || {
@@ -83,7 +84,7 @@ function initFirebaseApp() {
   loadInitialData();
 }
 
-// تحميل البيانات وربط المزامنة الفورية وترحيل البيانات للسحابة
+// تحميل البيانات وربط المزامنة الفورية وترحيل البيانات للسحابة مرة واحدة فقط
 function loadInitialData() {
   const localData = localStorage.getItem(STORAGE_KEY);
   if (localData) {
@@ -104,10 +105,17 @@ function loadInitialData() {
   migrateAllPasswordsRoleBased();
   saveLocalStore();
 
-  // تفعيل المزامنة اللحظية وترحيل البيانات الموجودة بالكمبيوتر إلى السحابة فوراً
+  // تفعيل المزامنة اللحظية الخفيفة
   if (isFirebaseOnline && dbFirestore) {
     setupRealtimeCloudSync();
-    autoMigrateLocalDataToCloud();
+    
+    // ترحيل البيانات إلى السحابة مرة واحدة فقط إذا لم يسبق ترحيلها
+    const migrationDoneKey = "HALAQAT_MIGRATION_COMPLETED_V1";
+    if (!localStorage.getItem(migrationDoneKey)) {
+      autoMigrateLocalDataToCloud().then(() => {
+        localStorage.setItem(migrationDoneKey, "true");
+      });
+    }
   }
 }
 
@@ -172,27 +180,14 @@ function ensureDefaultAccounts() {
   }
 }
 
-// دالة توحيد الرقم السري (1111 للطالبات و 1234 للمعلمات)
+// دالة توحيد الرقم السري محلياً دون إغراق السحابة بعمليات كتابة
 function migrateAllPasswordsRoleBased() {
-  let hasChanges = false;
   if (Array.isArray(window.appStore.users)) {
     window.appStore.users.forEach((user) => {
       if (user.role === SAFE_ROLES.STUDENT || user.role === "student") {
-        if (user.pass !== "1111") {
-          user.pass = "1111";
-          hasChanges = true;
-          if (typeof saveToCloud === "function") {
-            saveToCloud("users", user.id, user);
-          }
-        }
+        if (user.pass !== "1111") user.pass = "1111";
       } else if (user.role === SAFE_ROLES.TEACHER || user.role === "teacher") {
-        if (!user.pass || user.pass === "") {
-          user.pass = "1234";
-          hasChanges = true;
-          if (typeof saveToCloud === "function") {
-            saveToCloud("users", user.id, user);
-          }
-        }
+        if (!user.pass || user.pass === "") user.pass = "1234";
       }
     });
   }
@@ -212,16 +207,8 @@ function migrateAllPasswordsRoleBased() {
           createdAt: stu.createdAt || Date.now(),
         };
         window.appStore.users.push(userRec);
-        hasChanges = true;
-        if (typeof saveToCloud === "function") {
-          saveToCloud("users", userRec.id, userRec);
-        }
       }
     });
-  }
-
-  if (hasChanges) {
-    saveLocalStore();
   }
 }
 
@@ -285,8 +272,8 @@ function seedProductionAdminOnly() {
   saveLocalStore();
 }
 
-// ترحيل البيانات المخزنة محلياً على الكمبيوتر إلى السحابة فورياً
-async function autoMigrateLocalDataToCloud() {
+// ترحيل البيانات إلى السحابة بحزم مجمعة (Batch) لتقليل عمليات الكتابة
+window.autoMigrateLocalDataToCloud = async function () {
   if (!dbFirestore) return;
 
   const collectionsToSync = [
@@ -305,13 +292,19 @@ async function autoMigrateLocalDataToCloud() {
     for (const colName of collectionsToSync) {
       const localItems = window.appStore[colName] || [];
       if (localItems.length > 0) {
+        // استخدام Batch للكتابة الجماعية لتوفير الحصة
+        const batch = dbFirestore.batch();
+        let count = 0;
+
         for (const item of localItems) {
           if (item && item.id) {
-            await dbFirestore
-              .collection(colName)
-              .doc(item.id)
-              .set(item, { merge: true });
+            const docRef = dbFirestore.collection(colName).doc(String(item.id));
+            batch.set(docRef, item, { merge: true });
+            count++;
           }
+        }
+        if (count > 0) {
+          await batch.commit();
         }
       }
     }
@@ -323,15 +316,16 @@ async function autoMigrateLocalDataToCloud() {
         .set(window.appStore.settings, { merge: true });
     }
 
-    console.log("☁️ تم رفع وتحديث بيانات الكمبيوتر مع السحابة بنجاح!");
+    console.log("☁️ تم رفع البيانات إلى السحابة بنجاح دون استهلاك إضافي.");
   } catch (err) {
     console.error("خطأ أثناء ترحيل البيانات السحابية:", err);
   }
-}
+};
 
-// المزامنة اللحظية التلقائية من السحابة لجميع الأجهزة (كمبيوتر وجوال)
+// المزامنة اللحظية الذكية بدون تكرار الحلقات
 function setupRealtimeCloudSync() {
-  if (!dbFirestore) return;
+  if (!dbFirestore || isSyncInitialized) return;
+  isSyncInitialized = true;
 
   const allCollections = [
     "users",
@@ -353,6 +347,9 @@ function setupRealtimeCloudSync() {
     try {
       dbFirestore.collection(colName).onSnapshot(
         (snapshot) => {
+          // تجاهل الإشعار إذا كان التعديل قد صدر محلياً للتو لتفادي تكرار القراءة
+          if (snapshot.metadata.hasPendingWrites) return;
+
           if (!snapshot.empty) {
             const items = snapshot.docs.map((doc) => ({
               id: doc.id,
@@ -370,9 +367,10 @@ function setupRealtimeCloudSync() {
 
             saveLocalStore();
 
-            // تحديث الشاشة النشطة تلقائياً عند وصول أي تعديل
-            if (typeof refreshAllViews === "function") {
-              refreshAllViews();
+            // تحديث الواجهة فقط إذا كان المستخدم مسجلاً للدخول بالفعل
+            if (window.currentUser && typeof refreshActiveView === "function") {
+              const activeView = document.querySelector(".content-view.active")?.id;
+              if (activeView) refreshActiveView(activeView);
             }
           }
         },
@@ -438,11 +436,11 @@ async function saveToCloud(collectionName, docId, data, isDelete = false) {
   if (isFirebaseOnline && dbFirestore) {
     try {
       if (isDelete) {
-        await dbFirestore.collection(collectionName).doc(docId).delete();
+        await dbFirestore.collection(collectionName).doc(String(docId)).delete();
       } else {
         await dbFirestore
           .collection(collectionName)
-          .doc(docId)
+          .doc(String(docId))
           .set(data, { merge: true });
       }
     } catch (e) {
