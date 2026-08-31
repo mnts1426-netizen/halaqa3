@@ -153,7 +153,9 @@ async function checkAndRunCloudMigration(migrationDoneKey) {
       .doc("migrationStatus")
       .set({ migrated: true, migratedAt: Date.now() }, { merge: true });
 
-    console.log("🔍 [DIAG] تم تسجيل اكتمال الترحيل مركزياً في meta/migrationStatus.");
+    console.log(
+      "🔍 [DIAG] تم تسجيل اكتمال الترحيل مركزياً في meta/migrationStatus.",
+    );
 
     localStorage.setItem(migrationDoneKey, "true");
   } catch (e) {
@@ -396,7 +398,7 @@ window.autoMigrateLocalDataToCloud = async function () {
 // meta/appVersion على Firestore ليطابق نفس القيمة. عندها أي جهاز
 // يشغّل نسخة قديمة سيكتشف ذلك فوراً (بدون انتظار) ويُعيد تحميل
 // الصفحة تلقائياً، فيحصل على آخر إصلاحات الكود دون أي تدخل يدوي.
-const APP_BUILD_VERSION = "2026-08-31-1";
+const APP_BUILD_VERSION = "2026-08-31-2";
 
 function watchForAppUpdates() {
   if (!dbFirestore) return;
@@ -425,6 +427,18 @@ function watchForAppUpdates() {
 }
 
 // المزامنة اللحظية الذكية بدون تكرار الحلقات
+// عدد الأيام التي تُزامن لحظياً لمجموعتي الحضور والتسميع فقط (تكبران
+// باستمرار مع الوقت). التاريخ الأقدم يبقى محفوظاً بأمان في Firestore
+// ويُجلب عند الطلب فقط عبر ensureFullAttendanceTasmeeaHistory أدناه
+// (تستخدمها صفحة التقارير عند الحاجة الفعلية لفترات أقدم).
+const RECENT_SYNC_DAYS = 45;
+
+function getRecentSyncCutoffDate(daysBack) {
+  const d = new Date();
+  d.setDate(d.getDate() - daysBack);
+  return d.toISOString().split("T")[0];
+}
+
 function setupRealtimeCloudSync() {
   if (!dbFirestore || isSyncInitialized) return;
   isSyncInitialized = true;
@@ -449,9 +463,18 @@ function setupRealtimeCloudSync() {
     "settings",
   ];
 
+  // مجموعتا الحضور والتسميع فقط تُقيَّدان بنافذة زمنية حديثة، لأنهما
+  // الأكبر تراكماً والأكثر استهلاكاً للقراءات مع تراكم الأشهر.
+  const dateScopedCollections = ["attendance", "tasmeea"];
+  const recentCutoffDate = getRecentSyncCutoffDate(RECENT_SYNC_DAYS);
+
   allCollections.forEach((colName) => {
     try {
-      dbFirestore.collection(colName).onSnapshot(
+      const colRef = dateScopedCollections.includes(colName)
+        ? dbFirestore.collection(colName).where("date", ">=", recentCutoffDate)
+        : dbFirestore.collection(colName);
+
+      colRef.onSnapshot(
         (snapshot) => {
           // تجاهل الإشعار إذا كان التعديل قد صدر محلياً للتو لتفادي تكرار القراءة
           if (snapshot.metadata.hasPendingWrites) return;
@@ -491,6 +514,31 @@ function setupRealtimeCloudSync() {
     }
   });
 }
+
+// جلب كامل تاريخ الحضور والتسميع عند الحاجة الفعلية فقط (مثلاً صفحة
+// التقارير عند طلب فترة أقدم من النافذة اللحظية المحدودة أعلاه).
+// هذه قراءة واحدة (get) وليست استماعاً دائماً، فلا تتكرر تلقائياً،
+// وتُستبدل بها بيانات appStore مؤقتاً بالنسخة الكاملة لهذه الجلسة فقط.
+window.ensureFullAttendanceTasmeeaHistory = async function () {
+  if (!dbFirestore) return;
+  try {
+    const [attSnap, tasmSnap] = await Promise.all([
+      dbFirestore.collection("attendance").get(),
+      dbFirestore.collection("tasmeea").get(),
+    ]);
+    window.appStore.attendance = attSnap.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+    window.appStore.tasmeea = tasmSnap.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+    saveLocalStore();
+  } catch (e) {
+    console.warn("تعذر جلب التاريخ الكامل لأغراض التقارير:", e);
+  }
+};
 
 // دالة تنفيذ التصفير اليدوي الآمن عند طلب الإدارة فقط
 window.executeSafeOperationalReset = async function () {
@@ -560,8 +608,7 @@ async function saveToCloud(collectionName, docId, data, isDelete = false) {
           isDelete: !!isDelete,
           userAgent: navigator.userAgent,
           currentUser:
-            (window.currentUser && window.currentUser.name) ||
-            "غير مسجل دخول",
+            (window.currentUser && window.currentUser.name) || "غير مسجل دخول",
           at: Date.now(),
           atReadable: new Date().toLocaleString("ar-SA"),
         },
