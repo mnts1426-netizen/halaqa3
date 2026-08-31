@@ -54,7 +54,7 @@ window.appStore = window.appStore || {
 };
 
 // تهيئة Firebase والاتصال بـ Firestore
-function initFirebaseApp() {
+async function initFirebaseApp() {
   try {
     const config =
       typeof FIREBASE_CONFIG !== "undefined"
@@ -69,6 +69,22 @@ function initFirebaseApp() {
       firebaseAuth = firebase.auth();
       isFirebaseOnline = true;
       console.log("✅ تم الاتصال بقاعدة بيانات دار المُهتدية النسائية بنجاح");
+
+      // تفعيل التخزين المحلي الدائم (Persistence): يقلل قراءات Firestore
+      // بشكل كبير عند إعادة فتح نفس الجهاز/المتصفح، لأن البيانات تُقرأ
+      // من ذاكرة الجهاز أولاً بدل طلبها من الخادم في كل مرة. يجب استدعاؤها
+      // هنا قبل أي عملية Firestore أخرى. آمنة تماماً: لو فشل التفعيل لأي
+      // سبب (متصفح قديم، وضع تصفح خفي، إلخ) يستمر التطبيق بعمله الطبيعي
+      // عبر الشبكة كالمعتاد دون أي كسر أو تأثير على أي ميزة.
+      try {
+        await dbFirestore.enablePersistence({ synchronizeTabs: true });
+        console.log("✅ تم تفعيل التخزين المحلي الدائم بنجاح.");
+      } catch (persistErr) {
+        console.warn(
+          "⚠️ تعذر تفعيل التخزين المحلي الدائم (سيعمل التطبيق بشكل طبيعي عبر الشبكة):",
+          persistErr && persistErr.code ? persistErr.code : persistErr,
+        );
+      }
     } else {
       console.warn("⚠️ مكتبات Firebase غير محملة. تم استخدام التخزين المحلي.");
       isFirebaseOnline = false;
@@ -398,7 +414,7 @@ window.autoMigrateLocalDataToCloud = async function () {
 // meta/appVersion على Firestore ليطابق نفس القيمة. عندها أي جهاز
 // يشغّل نسخة قديمة سيكتشف ذلك فوراً (بدون انتظار) ويُعيد تحميل
 // الصفحة تلقائياً، فيحصل على آخر إصلاحات الكود دون أي تدخل يدوي.
-const APP_BUILD_VERSION = "2026-08-31-2";
+const APP_BUILD_VERSION = "2026-08-31-3";
 
 function watchForAppUpdates() {
   if (!dbFirestore) return;
