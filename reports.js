@@ -143,7 +143,20 @@ function getSundayToWednesdayDatesByWeekOption(weekOption) {
   return days;
 }
 
-function generateReport() {
+async function generateReport() {
+  const thead = document.getElementById("report-thead");
+  const tbody = document.getElementById("report-tbody");
+
+  // التقارير قد تحتاج تاريخاً أقدم من نافذة المزامنة اللحظية المحدودة،
+  // لذا نجلب كامل تاريخ الحضور والتسميع مرة واحدة عند الطلب هنا فقط.
+  if (typeof window.ensureFullAttendanceTasmeeaHistory === "function") {
+    if (tbody) {
+      tbody.innerHTML =
+        '<tr><td colspan="8" class="text-center text-muted p-4">جاري تحميل بيانات التقرير...</td></tr>';
+    }
+    await window.ensureFullAttendanceTasmeeaHistory();
+  }
+
   const reportType = document.getElementById("report-type-select")?.value;
   const selectedStudentId =
     document.getElementById("report-student-select")?.value || "all";
@@ -154,8 +167,6 @@ function generateReport() {
   const weekFrom = document.getElementById("report-week-from")?.value || "w_4";
   const weekTo = document.getElementById("report-week-to")?.value || "current";
 
-  const thead = document.getElementById("report-thead");
-  const tbody = document.getElementById("report-tbody");
   const printTitle = document.getElementById("print-report-title");
   const printPeriod = document.getElementById("print-report-period");
 
