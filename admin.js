@@ -342,8 +342,8 @@ window.buildOfficialPrintChrome = function (
         <strong style="color: #6b21a8;">المنصّة الإلكترونيّة لدار المُهتدية النسائية</strong>
       </div>
       <div style="text-align: center;">
-        <div style="font-weight: 800; color: #86198f;">مديرة الدار</div>
-        <div style="font-weight: 900; color: #6b21a8;">${window.appStore?.settings?.directorName || "المديرة"}</div>
+        <div style="font-weight: 800; color: #86198f;">مدير المَجْمَع القرآنيّ</div>
+        <div style="font-weight: 900; color: #6b21a8;">أحمد بن عبدالله آل مهدي</div>
       </div>
     </div>
   `;
