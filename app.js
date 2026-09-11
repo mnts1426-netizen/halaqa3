@@ -21,7 +21,9 @@ window.appStore = window.appStore || {
   screenOrder: [],
   circlesOrder: [],
   notifications: [],
+  teacherLogs: [],
   trophyStudentId: null,
+  trophyStudentIds: [],
   settings: null,
 };
 
@@ -241,6 +243,7 @@ window.handleLoginFormSubmit = function (e) {
       phone: foundTeacher.phone,
       role: window.ROLES.TEACHER,
       isFinance: Boolean(foundTeacher.isFinance),
+      photoURL: foundTeacher.photoURL || "",
       createdAt: foundTeacher.createdAt || Date.now(),
     };
     doLogin(teacherSessionUser, false);
@@ -282,6 +285,7 @@ window.handleLoginFormSubmit = function (e) {
       phone: foundStudent.phone,
       role: window.ROLES.STUDENT,
       circleId: foundStudent.circleId,
+      photoURL: foundStudent.photoURL || "",
       createdAt: foundStudent.createdAt || Date.now(),
     };
     doLogin(studentSessionUser, false);
@@ -366,6 +370,7 @@ window.handleStudentLoginFormSubmit = function (e) {
       phone: foundStudent.phone,
       role: window.ROLES.STUDENT,
       circleId: foundStudent.circleId,
+      photoURL: foundStudent.photoURL || "",
       createdAt: foundStudent.createdAt || Date.now(),
     };
     doLogin(studentSessionUser, false);
@@ -376,15 +381,308 @@ window.handleStudentLoginFormSubmit = function (e) {
   return false;
 };
 
+// محرك توثيق عمليات المعلمات في النظام
+window.logTeacherActivity = function (
+  action,
+  details,
+  teacherName,
+  circleName,
+) {
+  if (!window.appStore.teacherLogs) window.appStore.teacherLogs = [];
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const timeStr = now.toLocaleTimeString("ar-SA", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const newLog = {
+    id: "tlog_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+    action: action || "إجراء",
+    details: details || "",
+    teacherName:
+      teacherName || (window.currentUser ? window.currentUser.name : "معلمة"),
+    circleName: circleName || "—",
+    date: dateStr,
+    time: timeStr,
+    timestamp: Date.now(),
+  };
+
+  window.appStore.teacherLogs.unshift(newLog);
+  if (window.appStore.teacherLogs.length > 100) {
+    window.appStore.teacherLogs = window.appStore.teacherLogs.slice(0, 100);
+  }
+
+  if (typeof saveToCloud === "function") {
+    saveToCloud("teacherLogs", newLog.id, newLog);
+  }
+  if (typeof saveLocalStore === "function") saveLocalStore();
+
+  if (typeof renderTeacherLogsTable === "function") renderTeacherLogsTable();
+};
+
+// عرض صورة الحساب الشخصية في الشريط الجانبي إن وُجدت، وإلا الحرف الأول من الاسم كافتراضي
+window.updateSidebarUserAvatar = function (user, fallbackLetter) {
+  const avatarEl = document.getElementById("current-user-avatar");
+  if (!avatarEl) return;
+
+  if (user && user.photoURL) {
+    avatarEl.innerHTML = `<img src="${user.photoURL}" alt="صورة الحساب" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">`;
+  } else {
+    avatarEl.innerHTML = "";
+    avatarEl.textContent =
+      fallbackLetter || (user && user.name ? user.name.charAt(0) : "م");
+  }
+};
+
+// تعديل بياناتي الشخصية (متاح للمديرة والمعلمة والطالبة لأنفسهن): كلمة المرور والصورة
+window._pendingMyProfilePhotoDataUrl = null;
+window._pendingMyProfilePhotoRemoved = false;
+
+window.openModalEditMyProfile = function () {
+  const user = window.currentUser;
+  if (!user) return;
+
+  const passInput = document.getElementById("my-profile-password");
+  if (passInput) passInput.value = "";
+
+  window._pendingMyProfilePhotoDataUrl = null;
+  window._pendingMyProfilePhotoRemoved = false;
+
+  const fileInput = document.getElementById("my-profile-photo-file");
+  const preview = document.getElementById("my-profile-photo-preview");
+  const letter = document.getElementById("my-profile-photo-letter");
+  const removeBtn = document.getElementById("btn-remove-my-profile-photo");
+  if (fileInput) fileInput.value = "";
+
+  if (user.photoURL) {
+    if (preview) {
+      preview.src = user.photoURL;
+      preview.style.display = "block";
+    }
+    if (letter) letter.style.display = "none";
+    if (removeBtn) removeBtn.style.display = "inline-flex";
+  } else {
+    if (preview) {
+      preview.src = "";
+      preview.style.display = "none";
+    }
+    if (letter) {
+      letter.style.display = "flex";
+      letter.textContent = user.name ? user.name.charAt(0) : "؟";
+    }
+    if (removeBtn) removeBtn.style.display = "none";
+  }
+
+  openModal("modal-edit-my-profile");
+};
+
+window.previewMyProfilePhotoFile = async function (event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    alert("⚠️ يرجى اختيار ملف صورة صالح.");
+    event.target.value = "";
+    return;
+  }
+
+  try {
+    const dataUrl = await resizeImageFileToDataUrl(file, 200, 0.75);
+    window._pendingMyProfilePhotoDataUrl = dataUrl;
+    window._pendingMyProfilePhotoRemoved = false;
+
+    const preview = document.getElementById("my-profile-photo-preview");
+    const letter = document.getElementById("my-profile-photo-letter");
+    const removeBtn = document.getElementById("btn-remove-my-profile-photo");
+    if (preview) {
+      preview.src = dataUrl;
+      preview.style.display = "block";
+    }
+    if (letter) letter.style.display = "none";
+    if (removeBtn) removeBtn.style.display = "inline-flex";
+  } catch (e) {
+    console.error("تعذر معالجة الصورة:", e);
+    alert("⚠️ تعذر معالجة الصورة المختارة، يرجى تجربة صورة أخرى.");
+  }
+};
+
+window.removeMyProfilePhoto = function () {
+  window._pendingMyProfilePhotoDataUrl = null;
+  window._pendingMyProfilePhotoRemoved = true;
+
+  const fileInput = document.getElementById("my-profile-photo-file");
+  const preview = document.getElementById("my-profile-photo-preview");
+  const letter = document.getElementById("my-profile-photo-letter");
+  const removeBtn = document.getElementById("btn-remove-my-profile-photo");
+  if (fileInput) fileInput.value = "";
+  if (preview) {
+    preview.src = "";
+    preview.style.display = "none";
+  }
+  if (letter) letter.style.display = "flex";
+  if (removeBtn) removeBtn.style.display = "none";
+};
+
+window.handleSaveMyProfile = function (e) {
+  if (e && e.preventDefault) e.preventDefault();
+
+  const user = window.currentUser;
+  if (!user) return;
+
+  const newPass = (
+    document.getElementById("my-profile-password")?.value || ""
+  ).trim();
+
+  let newPhotoURL = user.photoURL;
+  if (window._pendingMyProfilePhotoDataUrl) {
+    newPhotoURL = window._pendingMyProfilePhotoDataUrl;
+  } else if (window._pendingMyProfilePhotoRemoved) {
+    newPhotoURL = null;
+  }
+
+  const userRec = (window.appStore?.users || []).find(
+    (u) =>
+      u.id === user.id ||
+      (user.userId && u.id === user.userId) ||
+      u.username === user.username,
+  );
+
+  if (userRec) {
+    if (newPass) userRec.pass = newPass;
+    userRec.photoURL = newPhotoURL || null;
+    if (typeof saveToCloud === "function")
+      saveToCloud("users", userRec.id, userRec);
+  }
+
+  if (user.role === window.ROLES.STUDENT) {
+    const stu = (window.appStore?.students || []).find((s) => s.id === user.id);
+    if (stu) {
+      stu.photoURL = newPhotoURL || null;
+      if (typeof saveToCloud === "function")
+        saveToCloud("students", stu.id, stu);
+    }
+  } else if (user.role === window.ROLES.TEACHER) {
+    const teach = (window.appStore?.teachers || []).find(
+      (t) => t.id === user.teacherId || t.userId === user.id || t.id === user.id,
+    );
+    if (teach) {
+      teach.photoURL = newPhotoURL || null;
+      if (typeof saveToCloud === "function")
+        saveToCloud("teachers", teach.id, teach);
+    }
+  }
+
+  user.photoURL = newPhotoURL || null;
+  if (newPass) user.pass = newPass;
+
+  if (typeof saveLocalStore === "function") saveLocalStore();
+  try {
+    localStorage.setItem("HALAQAT_SESSION_USER", JSON.stringify(user));
+  } catch (err) {}
+
+  if (typeof updateSidebarUserAvatar === "function")
+    updateSidebarUserAvatar(user);
+  if (
+    user.role === window.ROLES.STUDENT &&
+    typeof renderStudentData === "function"
+  ) {
+    renderStudentData();
+  }
+
+  window._pendingMyProfilePhotoDataUrl = null;
+  window._pendingMyProfilePhotoRemoved = false;
+
+  closeModal("modal-edit-my-profile");
+  alert("✅ تم حفظ تعديلات حسابكِ بنجاح!");
+};
+
 window.doLogin = function (user, isAutoSession = false) {
   if (!user) return;
 
   window.currentUser = user;
+
+  // توثيق الطابع الزمني لآخر دخول للنظام وحفظه محلياً وسحابياً
+  const now = new Date();
+  const formattedDate = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")}`;
+  const formattedTime = now.toLocaleTimeString("ar-SA", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const loginTimestampStr = `${formattedDate} (${formattedTime})`;
+
+  if (user.role === window.ROLES.TEACHER) {
+    const teacherObj = (window.appStore?.teachers || []).find(
+      (t) => t.id === user.id || t.userId === user.id || t.phone === user.phone,
+    );
+    if (teacherObj) {
+      teacherObj.lastLogin = loginTimestampStr;
+      if (typeof saveToCloud === "function")
+        saveToCloud("teachers", teacherObj.id, teacherObj);
+    }
+    user.lastLogin = loginTimestampStr;
+
+    if (!isAutoSession && typeof window.logTeacherActivity === "function") {
+      window.logTeacherActivity(
+        "تسجيل دخول",
+        "تسجيل الدخول للنظام بنجاح",
+        user.name,
+        "—",
+      );
+    }
+  } else if (user.role === window.ROLES.STUDENT) {
+    const stuObj = (window.appStore?.students || []).find(
+      (s) =>
+        s.id === user.id ||
+        s.nationalId === user.username ||
+        s.phone === user.phone,
+    );
+    if (stuObj) {
+      stuObj.lastLogin = loginTimestampStr;
+      if (typeof saveToCloud === "function")
+        saveToCloud("students", stuObj.id, stuObj);
+    }
+    user.lastLogin = loginTimestampStr;
+  }
+
+  const userRec = (window.appStore?.users || []).find(
+    (u) =>
+      u.id === user.id ||
+      (user.userId && u.id === user.userId) ||
+      u.username === user.username,
+  );
+  if (userRec) {
+    userRec.lastLogin = loginTimestampStr;
+    if (typeof saveToCloud === "function")
+      saveToCloud("users", userRec.id, userRec);
+  }
+
   try {
     localStorage.setItem("HALAQAT_SESSION_USER", JSON.stringify(user));
+    if (!isAutoSession) {
+      localStorage.setItem("HALAQAT_SESSION_TIME", Date.now().toString());
+    }
+    if (typeof saveLocalStore === "function") saveLocalStore();
   } catch (e) {
     console.warn(e);
   }
+
+  // مؤقت الخروج التلقائي الصارم بعد ساعتين (7,200,000 مللي ثانية) لأسباب أمنية
+  if (window.autoLogoutTimer) clearTimeout(window.autoLogoutTimer);
+  const sessionStartTime = parseInt(
+    localStorage.getItem("HALAQAT_SESSION_TIME") || Date.now().toString(),
+    10,
+  );
+  const elapsed = Date.now() - sessionStartTime;
+  const twoHoursMs = 2 * 60 * 60 * 1000;
+  const remaining = Math.max(0, twoHoursMs - elapsed);
+
+  window.autoLogoutTimer = setTimeout(() => {
+    alert(
+      "⚠️ انتهت جلستكِ الحالية (مرت ساعتان). تم تسجيل الخروج تلقائياً لأسباب أمنية.",
+    );
+    handleLogout();
+  }, remaining);
 
   const loginView = document.getElementById("view-login");
   const stuLoginView = document.getElementById("view-student-login");
@@ -424,8 +722,11 @@ window.doLogin = function (user, isAutoSession = false) {
             ? "نجمات التميز"
             : "طالبة";
   }
-  if (avatarEl)
+  if (typeof updateSidebarUserAvatar === "function") {
+    updateSidebarUserAvatar(user, displayName ? displayName.charAt(0) : "م");
+  } else if (avatarEl) {
     avatarEl.textContent = displayName ? displayName.charAt(0) : "م";
+  }
   if (welcomeEl) welcomeEl.textContent = `مرحباً ${displayName}`;
 
   try {
@@ -453,6 +754,9 @@ function adjustSidebarAndViewsForRole(role) {
     if (mainContent) mainContent.style.marginRight = "";
     if (topHeader) topHeader.style.display = "flex";
 
+    const pwaBarScreen = document.getElementById("pwa-install-notify-bar");
+    if (pwaBarScreen) pwaBarScreen.style.display = "none";
+
     navigateTo("view-screen");
     try {
       if (typeof renderScreenView === "function") renderScreenView();
@@ -478,6 +782,9 @@ function adjustSidebarAndViewsForRole(role) {
     if (studentNav) studentNav.style.display = "none";
     if (adminNav) adminNav.style.display = "block";
 
+    const pwaBar = document.getElementById("pwa-install-notify-bar");
+    if (pwaBar) pwaBar.style.display = "flex";
+
     const user = window.currentUser;
     const isFinancialTeacher =
       user &&
@@ -492,20 +799,28 @@ function adjustSidebarAndViewsForRole(role) {
         ));
 
     if (role === window.ROLES.TEACHER) {
-      document.querySelectorAll(".sidebar .nav-admin-only").forEach((el) => {
+      // إخفاء كل عناصر (nav-admin-only) في كامل الصفحة وليس فقط الشريط الجانبي
+      // (تشمل: سجل عمليات المعلمات، بطاقات لوحة تحكم خاصة بالإدارة، خيار المستهدف بالإشعار...)
+      document.querySelectorAll(".nav-admin-only").forEach((el) => {
         el.style.display = "none";
       });
       document.querySelectorAll(".sidebar .nav-teacher-only").forEach((el) => {
         el.style.display = "flex";
       });
 
+      // إزالة سجل عمليات المعلمات نهائياً من الصفحة إن كان أُنشئ مسبقاً بجلسة سابقة
+      const staleLogsCard = document.getElementById("teacher-logs-card");
+      if (staleLogsCard) staleLogsCard.remove();
+
       const financeNav = document.getElementById("nav-finance-link");
       if (financeNav) {
         financeNav.style.display = isFinancialTeacher ? "flex" : "none";
       }
     } else {
-      document.querySelectorAll(".sidebar .nav-admin-only").forEach((el) => {
-        el.style.display = "flex";
+      // إظهار كافة عناصر الإدارة (استخدام "" بدل "flex" ليرجع كل عنصر لنمط العرض
+      // الطبيعي الخاص به من ملف style.css بدل فرض flex على عناصر ليست كذلك أصلاً)
+      document.querySelectorAll(".nav-admin-only").forEach((el) => {
+        el.style.display = "";
       });
       document.querySelectorAll(".sidebar .nav-teacher-only").forEach((el) => {
         el.style.display = "none";
@@ -679,7 +994,19 @@ function syncHeaderDateTime() {
 
 function checkSavedSession() {
   const savedUserStr = localStorage.getItem("HALAQAT_SESSION_USER");
+  const sessionTime = parseInt(
+    localStorage.getItem("HALAQAT_SESSION_TIME") || "0",
+    10,
+  );
+  const twoHoursMs = 2 * 60 * 60 * 1000;
+
   if (savedUserStr) {
+    if (sessionTime && Date.now() - sessionTime > twoHoursMs) {
+      localStorage.removeItem("HALAQAT_SESSION_USER");
+      localStorage.removeItem("HALAQAT_SESSION_TIME");
+      showMainLoginView();
+      return;
+    }
     try {
       const user = JSON.parse(savedUserStr);
       doLogin(user, true);
@@ -719,28 +1046,26 @@ function checkStudentCurrentWeekTamayuz(studentId, weekOffset = 0) {
     const tasm = (window.appStore?.tasmeea || []).find(
       (t) => t.studentId === studentId && t.date === day,
     );
-    if (tasm) {
-      const isCleanMumtazOrEmpty = (r) => {
-        if (!r) return true;
-        const clean = String(r).trim();
-        if (
-          clean === "" ||
-          clean === "—" ||
-          clean === "-" ||
-          clean === "لا يوجد"
-        )
-          return true;
-        return clean.includes("ممتاز");
-      };
+    // لا يوجد سجل تسميع مُعتمَد فعلياً لهذا اليوم = يُعامل كـ"يعيد" (يمنع مرور طالبة
+    // "مُرحَّل تلقائياً" لها لم يُعتمد لها شيء فعلياً من قبل المعلمة كمتميزة)
+    if (!tasm) {
+      return false;
+    }
+    const isCleanMumtazOrEmpty = (r) => {
+      if (!r) return true;
+      const clean = String(r).trim();
+      if (clean === "" || clean === "—" || clean === "-" || clean === "لا يوجد")
+        return true;
+      return clean.includes("ممتاز");
+    };
 
-      if (
-        !isCleanMumtazOrEmpty(tasm.hifzRating) ||
-        !isCleanMumtazOrEmpty(tasm.murajaaRating) ||
-        !isCleanMumtazOrEmpty(tasm.tilawaRating) ||
-        !isCleanMumtazOrEmpty(tasm.rating)
-      ) {
-        return false;
-      }
+    if (
+      !isCleanMumtazOrEmpty(tasm.hifzRating) ||
+      !isCleanMumtazOrEmpty(tasm.murajaaRating) ||
+      !isCleanMumtazOrEmpty(tasm.tilawaRating) ||
+      !isCleanMumtazOrEmpty(tasm.rating)
+    ) {
+      return false;
     }
   }
 
@@ -858,7 +1183,14 @@ window.handleTeacherSelfCheckIn = function () {
     renderDashboardView();
   };
 
-  if (mosqueLat !== null && mosqueLng !== null) {
+  // تعطيل التحقق الفعلي من المسافة الجغرافية بناءً على طلب الإدارة (نفس قرار برنامج
+  // الرجال): يبقى إعداد "موقع الدار" والخريطة وزر "موقعي الحالي" في الإعدادات ظاهرين
+  // ويعملان بشكل طبيعي تماماً كما هي، لكن تحضير المعلمة/المديرة الذاتي لا يُقيَّد فعلياً
+  // بأي مسافة حقيقية عن ذلك الموقع بعد الآن - يمكن تسجيل الحضور من أي مكان دون أي تنبيه
+  // أو فرق ملحوظ في الواجهة أو الرسائل
+  const enforceLocationCheck = false;
+
+  if (enforceLocationCheck && mosqueLat !== null && mosqueLng !== null) {
     if (!navigator.geolocation) {
       alert(
         "⚠️ جهازكِ لا يدعم خاصية تحديد الموقع الجغرافي GPS المطلوبة للتحقق من وجودكِ بالدار.",
@@ -984,6 +1316,30 @@ function renderStudentData() {
   const todayRecord = studentTasmeea.find((t) => t.date === todayStr) || {};
   const todayAttRecord = studentAtt.find((a) => a.date === todayStr);
 
+  // ترحيل مقرر اليوم تلقائياً من "مقرر الغد" الذي حددته المعلمة آخر مرة، حتى لو تخلّل ذلك أيام غياب
+  const carriedHifzSurah =
+    typeof getCarriedForwardLessonValue === "function"
+      ? getCarriedForwardLessonValue(studentId, todayStr, "hifzSurah", "nextHifz")
+      : todayRecord.hifzSurah;
+  const carriedMurajaaSurah =
+    typeof getCarriedForwardLessonValue === "function"
+      ? getCarriedForwardLessonValue(
+          studentId,
+          todayStr,
+          "murajaaSurah",
+          "nextMurajaa",
+        )
+      : todayRecord.murajaaSurah;
+  const carriedTilawaSurah =
+    typeof getCarriedForwardLessonValue === "function"
+      ? getCarriedForwardLessonValue(
+          studentId,
+          todayStr,
+          "tilawaSurah",
+          "nextTilawa",
+        )
+      : todayRecord.tilawaSurah;
+
   const latestTasmWithNext =
     studentTasmeea
       .filter((t) => t.nextHifz || t.nextMurajaa || t.nextTilawa)
@@ -1010,23 +1366,54 @@ function renderStudentData() {
         '<span class="badge" style="background:#f3e8ff; color:#6b21a8;">🔵 مستأذنة</span>';
   }
 
-  const studentNotifs = (window.appStore?.notifications || []).filter((n) => {
+  const directNotifs = (window.appStore?.notifications || []).filter((n) => {
     if (!n) return false;
-    if (n.recipient === "all" || n.recipient === "students") return true;
-    if (n.recipient === "specific_student") {
-      return (
-        n.targetId === student.id ||
-        n.targetId === student.nationalId ||
-        n.targetId === student.phone ||
-        n.targetId === student.parentPhone ||
-        (n.targetName &&
-          (n.targetName === student.name ||
-            n.targetName.includes(student.name) ||
-            student.name.includes(n.targetName)))
-      );
+    const rec = String(n.recipient || "").trim();
+    if (rec === "all" || rec === "students") return true;
+    if (n.circleId && String(n.circleId) === String(student.circleId))
+      return true;
+    if (rec === "specific_student") {
+      const tId = String(n.targetId || "").trim();
+      const sId = String(student.id || "").trim();
+      const sNat = String(student.nationalId || "").trim();
+      const sPhone = String(student.phone || "").trim();
+      const pPhone = String(student.parentPhone || "").trim();
+      const tName = String(n.targetName || "").trim();
+      const sName = String(student.name || "").trim();
+
+      if (
+        tId &&
+        (tId === sId || tId === sNat || tId === sPhone || tId === pPhone)
+      )
+        return true;
+      if (
+        tName &&
+        sName &&
+        (tName === sName || tName.includes(sName) || sName.includes(tName))
+      )
+        return true;
     }
     return false;
   });
+
+  // ملاحظات المعلمة اليومية في التسميع تُعرض تلقائياً كإشعارات موجهة للطالبة أيضاً
+  const tasmeeaTeacherNotes = studentTasmeea
+    .filter((t) => t.studentNotes && String(t.studentNotes).trim() !== "")
+    .map((t) => ({
+      id: `tasm_note_${t.id || t.date}`,
+      title: `💬 توجيه وملاحظة المعلمة (تسميع ${t.date || "اليوم"})`,
+      body: t.studentNotes,
+      sender: "معلمة الحلقة",
+      date: t.date || "",
+      createdAt: t.updatedAt || Date.now(),
+    }));
+
+  const studentNotifs = [...directNotifs, ...tasmeeaTeacherNotes];
+  studentNotifs.sort(
+    (a, b) =>
+      (b.createdAt || 0) - (a.createdAt || 0) ||
+      (b.date || "").localeCompare(a.date || ""),
+  );
 
   const studentTests = (window.appStore?.tests || []).filter(
     (t) => t.studentId === student.id || t.studentId === studentId,
@@ -1095,18 +1482,33 @@ function renderStudentData() {
     </div>
   `;
 
+  const latestTest = studentTests[0];
+  const testCongratsBoxHtml =
+    hasTests && latestTest
+      ? `
+    <div class="card" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border: 2px solid #2e7d32; border-radius: 10px; padding: 1.15rem; text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center; margin-bottom: 0;">
+      <h3 style="color: #2e7d32; font-weight: 900; font-size: 1.15rem; margin-bottom: 4px;">
+        🎉 مبارك حصولكِ على الدرجة (${latestTest.score || "0"}/100) 🌟
+      </h3>
+      <p style="color: #33691e; font-size: 0.85rem; margin: 0; font-weight: 700;">
+        في اختبار (${latestTest.type || "اختبار مرحلي"}) بتاريخ ${latestTest.date || "—"}
+      </p>
+    </div>
+  `
+      : "";
+
   let row1ConditionalHtml = "";
   if (hasTamayuz && hasTests) {
     row1ConditionalHtml = `
       <div class="mb-3" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; align-items: stretch;">
         <div>${tamayuzBoxHtml}</div>
-        <div>${testsBoxHtml}</div>
+        <div>${testCongratsBoxHtml}</div>
       </div>
     `;
   } else if (hasTamayuz) {
     row1ConditionalHtml = `<div class="mb-3">${tamayuzBoxHtml}</div>`;
   } else if (hasTests) {
-    row1ConditionalHtml = `<div class="mb-3">${testsBoxHtml}</div>`;
+    row1ConditionalHtml = `<div class="mb-3">${testCongratsBoxHtml}</div>`;
   }
 
   container.innerHTML = `
@@ -1119,6 +1521,17 @@ function renderStudentData() {
       <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
         <img src="${logoTransparent}" alt="شعار الدار" style="height: 70px; width: auto; object-fit: contain; background: transparent; padding: 4px; border-radius: 8px; mix-blend-mode: screen;" />
         <div style="text-align: center; flex: 1;">
+          <div
+            onclick="openModalEditMyProfile()"
+            title="تعديل بياناتي الشخصية (كلمة المرور والصورة)"
+            style="width: 56px; height: 56px; margin: 0 auto 6px auto; border-radius: 50%; overflow: hidden; cursor: pointer; background: rgba(255,255,255,0.25); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 1.3rem; border: 2px solid rgba(255,255,255,0.5);"
+          >
+            ${
+              student.photoURL
+                ? `<img src="${student.photoURL}" alt="صورتي" style="width:100%; height:100%; object-fit:cover;">`
+                : (student.name ? student.name.charAt(0) : "؟")
+            }
+          </div>
           <h2 style="font-size: 1.4rem; font-weight: 900; margin-bottom: 4px;">${student.name}</h2>
           <p style="font-size: 0.95rem; opacity: 0.9; margin-bottom: 8px;">دار المُهتدية النسائية — جامع الهدى</p>
           <span style="background: rgba(255, 255, 255, 0.2); padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 700;">
@@ -1126,6 +1539,17 @@ function renderStudentData() {
           </span>
         </div>
       </div>
+    </div>
+
+    <!-- تثبيت التطبيق وتفعيل الإشعارات (نسخة خاصة بصفحة الطالبة) -->
+    <div class="card mb-3" style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; padding: 0.9rem 1.25rem;">
+      <div>
+        <strong style="color: var(--primary-dark); font-size: 0.92rem;">📲 ثبّتي التطبيق وفعّلي الإشعارات</strong>
+        <div class="js-install-notify-status" style="font-size: 0.75rem; color: #888; margin-top: 2px;"></div>
+      </div>
+      <button type="button" class="btn btn-primary btn-sm js-install-notify-btn" onclick="handleInstallAndEnableNotifications()">
+        تثبيت + تفعيل
+      </button>
     </div>
 
     <!-- 1. الصف الأول: التميز والاختبارات التفاعلي المشروط -->
@@ -1152,38 +1576,51 @@ function renderStudentData() {
         <h3 class="stat-value" style="font-size: 1.35rem; color: #2e7d32;">${hifzMumtaz}</h3>
       </div>
       <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
-        <span class="stat-label" style="font-size: 0.78rem;">الدرس الجديد: ج.جداً</span>
-        <h3 class="stat-value" style="font-size: 1.35rem; color: #6b21a8;">${hifzJayyidJiddan}</h3>
+        <span class="stat-label" style="font-size: 0.78rem;">مراجعة: ممتاز</span>
+        <h3 class="stat-value" style="font-size: 1.35rem; color: #2e7d32;">${murajaaMumtaz}</h3>
       </div>
       <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
-        <span class="stat-label" style="font-size: 0.78rem;">الدرس الجديد: جيد/يعيد</span>
-        <h3 class="stat-value" style="font-size: 1.35rem; color: #b78103;">${hifzJayyid + hifzRe}</h3>
+        <span class="stat-label" style="font-size: 0.78rem;">تلاوة: ممتاز</span>
+        <h3 class="stat-value" style="font-size: 1.35rem; color: #2e7d32;">${tilawaMumtaz}</h3>
       </div>
 
       <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
-        <span class="stat-label" style="font-size: 0.78rem;">مراجعة: ممتاز</span>
-        <h3 class="stat-value" style="font-size: 1.35rem; color: #2e7d32;">${murajaaMumtaz}</h3>
+        <span class="stat-label" style="font-size: 0.78rem;">الدرس الجديد: ج.جداً</span>
+        <h3 class="stat-value" style="font-size: 1.35rem; color: #6b21a8;">${hifzJayyidJiddan}</h3>
       </div>
       <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
         <span class="stat-label" style="font-size: 0.78rem;">مراجعة: ج.جداً</span>
         <h3 class="stat-value" style="font-size: 1.35rem; color: #6b21a8;">${murajaaJayyidJiddan}</h3>
       </div>
       <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
-        <span class="stat-label" style="font-size: 0.78rem;">مراجعة: جيد/يعيد</span>
-        <h3 class="stat-value" style="font-size: 1.35rem; color: #b78103;">${murajaaJayyid + murajaaRe}</h3>
-      </div>
-
-      <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
-        <span class="stat-label" style="font-size: 0.78rem;">تلاوة: ممتاز</span>
-        <h3 class="stat-value" style="font-size: 1.35rem; color: #2e7d32;">${tilawaMumtaz}</h3>
-      </div>
-      <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
         <span class="stat-label" style="font-size: 0.78rem;">تلاوة: ج.جداً</span>
         <h3 class="stat-value" style="font-size: 1.35rem; color: #6b21a8;">${tilawaJayyidJiddan}</h3>
       </div>
+
       <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
-        <span class="stat-label" style="font-size: 0.78rem;">تلاوة: جيد/يعيد</span>
-        <h3 class="stat-value" style="font-size: 1.35rem; color: #b78103;">${tilawaJayyid + tilawaRe}</h3>
+        <span class="stat-label" style="font-size: 0.78rem;">الدرس الجديد: جيد</span>
+        <h3 class="stat-value" style="font-size: 1.35rem; color: #b78103;">${hifzJayyid}</h3>
+      </div>
+      <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
+        <span class="stat-label" style="font-size: 0.78rem;">مراجعة: جيد</span>
+        <h3 class="stat-value" style="font-size: 1.35rem; color: #b78103;">${murajaaJayyid}</h3>
+      </div>
+      <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
+        <span class="stat-label" style="font-size: 0.78rem;">تلاوة: جيد</span>
+        <h3 class="stat-value" style="font-size: 1.35rem; color: #b78103;">${tilawaJayyid}</h3>
+      </div>
+
+      <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
+        <span class="stat-label" style="font-size: 0.78rem;">الدرس الجديد: يعيد</span>
+        <h3 class="stat-value" style="font-size: 1.35rem; color: #c62828;">${hifzRe}</h3>
+      </div>
+      <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
+        <span class="stat-label" style="font-size: 0.78rem;">مراجعة: يعيد</span>
+        <h3 class="stat-value" style="font-size: 1.35rem; color: #c62828;">${murajaaRe}</h3>
+      </div>
+      <div class="stat-card" style="padding: 0.75rem; text-align: center; flex-direction: column; justify-content: center;">
+        <span class="stat-label" style="font-size: 0.78rem;">تلاوة: يعيد</span>
+        <h3 class="stat-value" style="font-size: 1.35rem; color: #c62828;">${tilawaRe}</h3>
       </div>
     </div>
 
@@ -1275,22 +1712,25 @@ function renderStudentData() {
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.8rem;">
           <div style="background: #fbf8ff; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color);">
             <strong style="color: var(--primary-brown); font-size: 0.85rem;">📖 الدرس الجديد:</strong>
-            <p style="margin-top: 4px; font-weight: 700;">${todayRecord.hifzSurah || "لم يسجل بعد"}</p>
+            <p style="margin-top: 4px; font-weight: 700;">${carriedHifzSurah || "لم يسجل بعد"}</p>
             ${todayRecord.hifzRating ? `<span class="badge badge-active mt-1">${todayRecord.hifzRating}</span>` : ""}
           </div>
           <div style="background: #fbf8ff; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color);">
             <strong style="color: var(--primary-brown); font-size: 0.85rem;">🔄 المراجعة:</strong>
-            <p style="margin-top: 4px; font-weight: 700;">${todayRecord.murajaaSurah || "لم يسجل بعد"}</p>
+            <p style="margin-top: 4px; font-weight: 700;">${carriedMurajaaSurah || "لم يسجل بعد"}</p>
             ${todayRecord.murajaaRating ? `<span class="badge badge-active mt-1">${todayRecord.murajaaRating}</span>` : ""}
           </div>
           <div style="background: #fbf8ff; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color);">
             <strong style="color: var(--primary-brown); font-size: 0.85rem;">🎧 التلاوة:</strong>
-            <p style="margin-top: 4px; font-weight: 700;">${todayRecord.tilawaSurah || "لم يسجل بعد"}</p>
+            <p style="margin-top: 4px; font-weight: 700;">${carriedTilawaSurah || "لم يسجل بعد"}</p>
             ${todayRecord.tilawaRating ? `<span class="badge badge-active mt-1">${todayRecord.tilawaRating}</span>` : ""}
           </div>
         </div>
       </div>
     </div>
+
+    <!-- 6. الصف السادس: سجل نتائج الاختبارات كاملاً -->
+    ${hasTests ? testsBoxHtml : ""}
   `;
 }
 
@@ -1377,6 +1817,7 @@ function refreshAllViews() {
       renderTeacherNotesTable();
     if (typeof renderAccountsTable === "function") renderAccountsTable();
     if (typeof renderScreenView === "function") renderScreenView();
+    if (typeof renderTeacherLogsTable === "function") renderTeacherLogsTable();
     renderNotificationsView();
   } catch (e) {
     console.warn(e);
@@ -1388,7 +1829,11 @@ function refreshActiveView(viewId) {
     updateCircleDropdowns();
     applyAppIdentity();
     syncHeaderDateTime();
-    if (viewId === "view-dashboard") renderDashboardView();
+    if (viewId === "view-dashboard") {
+      renderDashboardView();
+      if (typeof renderTeacherLogsTable === "function")
+        renderTeacherLogsTable();
+    }
     if (viewId === "view-circles") {
       if (typeof renderCirclesCards === "function") renderCirclesCards();
       if (typeof renderTeachersTable === "function") renderTeachersTable();
@@ -1415,6 +1860,11 @@ function refreshActiveView(viewId) {
       renderScreenView();
     if (viewId === "view-tests" && typeof renderTestsTable === "function")
       renderTestsTable();
+    if (
+      viewId === "view-finance" &&
+      typeof renderFinanceReports === "function"
+    )
+      renderFinanceReports();
     if (viewId === "view-notifications") renderNotificationsView();
     if (viewId === "view-student-home") renderStudentData();
   } catch (e) {
@@ -1431,7 +1881,21 @@ function renderDashboardView() {
   const teacherDashCols = document.getElementById("teacher-dash-columns");
   const tamayuzBoardCard = document.getElementById("tamayuz-board-card");
   const selfAttCard = document.getElementById("teacher-self-attendance-card");
-  const todayStr = new Date().toISOString().split("T")[0];
+
+  const dashDateSelect = document.getElementById("dashboard-date-select");
+  const todayStr =
+    dashDateSelect && dashDateSelect.value
+      ? dashDateSelect.value
+      : new Date().toISOString().split("T")[0];
+
+  if (dashDateSelect && !dashDateSelect.value) {
+    dashDateSelect.value = todayStr;
+  }
+
+  const isWorkday =
+    typeof isOfficialWorkday === "function"
+      ? isOfficialWorkday(todayStr)
+      : new Date(todayStr).getDay() >= 0 && new Date(todayStr).getDay() <= 3;
 
   if (tamayuzBoardCard) {
     tamayuzBoardCard.style.display = isTeacher ? "none" : "block";
@@ -1469,7 +1933,8 @@ function renderDashboardView() {
   }
 
   if (isTeacher) {
-    if (teacherDashCols) teacherDashCols.style.display = "grid";
+    // بطاقتا "حلقاتي" و"جدول اليوم" غير مستخدمتين (تبقيان فارغتين دوماً) - تُخفى للمعلمة
+    if (teacherDashCols) teacherDashCols.style.display = "none";
 
     const teacherObj = (window.appStore?.teachers || []).find(
       (t) =>
@@ -1494,10 +1959,15 @@ function renderDashboardView() {
     const todayAtt = (window.appStore?.attendance || []).filter(
       (a) => a.date === todayStr && teacherCircleIds.includes(a.circleId),
     );
-    const absentCount = todayAtt.filter((a) => a.status === "absent").length;
     const presentCount = todayAtt.filter(
       (a) => a.status === "present" || a.status === "late",
     ).length;
+
+    // احتساب الغياب: تلقائي في أيام الأسبوع الرسمية (نفس منطق التحضير التلقائي)
+    let absentCount = todayAtt.filter((a) => a.status === "absent").length;
+    if (isWorkday) {
+      absentCount = Math.max(0, teacherStudents.length - presentCount);
+    }
 
     const el1 = document.getElementById("val-stat-1");
     const el2 = document.getElementById("val-stat-2");
@@ -1590,7 +2060,7 @@ function renderDashboardView() {
   }
 }
 
-// نافذة تفاصيل من سمّعن ومن لم يُسمّعن اليوم
+// نافذة تفاصيل من سمّعن ومن لم يُسمّعن، مع قراءة التاريخ المختار من لوحة التحكم
 window.currentTasmeeaModalType = "recited";
 window.openTasmeeaDetailsModal = function (type) {
   window.currentTasmeeaModalType = type;
@@ -1598,10 +2068,40 @@ window.openTasmeeaDetailsModal = function (type) {
   const tbody = document.getElementById("tasmeea-details-tbody");
   if (!tbody) return;
 
-  const todayStr = new Date().toISOString().split("T")[0];
-  const activeStudents = (window.appStore?.students || []).filter(
+  const dashDateSelect = document.getElementById("dashboard-date-select");
+  const todayStr =
+    dashDateSelect && dashDateSelect.value
+      ? dashDateSelect.value
+      : new Date().toISOString().split("T")[0];
+
+  let activeStudents = (window.appStore?.students || []).filter(
     (s) => s.status === "active",
   );
+
+  // المعلمة ترى فقط طالبات حلقاتها (إصلاح أمني: كانت القائمة تعرض كل الطالبات
+  // النشطات بغض النظر عن الحلقات المسندة فعلياً للمعلمة المسجّلة دخولها)
+  const user = window.currentUser;
+  if (user && user.role === window.ROLES.TEACHER) {
+    const teacherObj = (window.appStore?.teachers || []).find(
+      (t) =>
+        t.userId === user.id ||
+        t.id === user.teacherId ||
+        t.id === user.id ||
+        t.phone === user.phone,
+    );
+    const teacherId = teacherObj ? teacherObj.id : user.teacherId || user.id;
+    const teacherCircleIds = (window.appStore?.circles || [])
+      .filter(
+        (c) =>
+          (Array.isArray(c.teacherIds) && c.teacherIds.includes(teacherId)) ||
+          c.teacherId === teacherId,
+      )
+      .map((c) => c.id);
+    activeStudents = activeStudents.filter((s) =>
+      teacherCircleIds.includes(s.circleId),
+    );
+  }
+
   const todayTasmeea = (window.appStore?.tasmeea || []).filter(
     (t) => t.date === todayStr,
   );
@@ -1612,16 +2112,16 @@ window.openTasmeeaDetailsModal = function (type) {
   let list = [];
   if (type === "recited") {
     if (titleEl)
-      titleEl.textContent = `📖 قائمة الطالبات اللاتي سمّعن اليوم (${todayStr})`;
+      titleEl.textContent = `📖 قائمة الطالبات اللاتي سمّعن ليوم (${todayStr})`;
     list = activeStudents.filter((s) => tasmeeaMap.has(s.id));
   } else {
     if (titleEl)
-      titleEl.textContent = `⏳ قائمة الطالبات اللاتي لم يُسمّعن اليوم (${todayStr})`;
+      titleEl.textContent = `⏳ قائمة الطالبات اللاتي لم يُسمّعن ليوم (${todayStr})`;
     list = activeStudents.filter((s) => !tasmeeaMap.has(s.id));
   }
 
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted p-4">لا توجد بيانات لهذه القائمة اليوم</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted p-4">لا توجد بيانات لهذه القائمة في هذا التاريخ</td></tr>`;
   } else {
     let html = "";
     list.forEach((s, idx) => {
@@ -1678,22 +2178,40 @@ window.exportTasmeeaDetailsExcel = function () {
     alert("⚠️ مكتبة Excel غير متوفرة!");
     return;
   }
-  const wb = XLSX.utils.table_to_book(table, { sheet: "تسميع_اليوم" });
+  const dashDateSelect = document.getElementById("dashboard-date-select");
+  const dateStr =
+    dashDateSelect && dashDateSelect.value
+      ? dashDateSelect.value
+      : new Date().toISOString().split("T")[0];
+
+  const wb = XLSX.utils.table_to_book(table, { sheet: "تسميع_الطالبات" });
   const fileName =
     window.currentTasmeeaModalType === "recited"
-      ? "الطالبات_اللاتي_سمعن_اليوم"
-      : "الطالبات_اللاتي_لم_يسمعن_اليوم";
-  XLSX.writeFile(
-    wb,
-    `${fileName}_${new Date().toISOString().split("T")[0]}.xlsx`,
-  );
+      ? "الطالبات_اللاتي_سمعن"
+      : "الطالبات_اللاتي_لم_يسمعن";
+  XLSX.writeFile(wb, `${fileName}_${dateStr}.xlsx`);
 };
 
+// تنزيل PDF المباشر الفوري
 window.exportTasmeeaDetailsPDF = function () {
-  if (typeof exportElementToPDF === "function") {
+  const dashDateSelect = document.getElementById("dashboard-date-select");
+  const dateStr =
+    dashDateSelect?.value || new Date().toISOString().split("T")[0];
+  const fileName =
+    window.currentTasmeeaModalType === "recited"
+      ? "الطالبات_اللاتي_سمعن"
+      : "الطالبات_اللاتي_لم_يسمعن";
+
+  if (typeof directDownloadPDF === "function") {
+    directDownloadPDF(
+      "tasmeea-details-table",
+      `${fileName}_${dateStr}`,
+      "تفاصيل تسميع الطالبات",
+    );
+  } else if (typeof exportElementToPDF === "function") {
     exportElementToPDF(
       "modal-tasmeea-status-details",
-      "تفاصيل_تسميع_الطالبات",
+      `${fileName}_${dateStr}`,
       "تفاصيل تسميع الطالبات",
     );
   } else {
@@ -1701,8 +2219,13 @@ window.exportTasmeeaDetailsPDF = function () {
   }
 };
 
+// فتح نافذة الطباعة التفاعلية
 window.printTasmeeaDetails = function () {
-  window.exportTasmeeaDetailsPDF();
+  if (typeof printTableElement === "function") {
+    printTableElement("tasmeea-details-table", "تفاصيل تسميع الطالبات");
+  } else {
+    window.exportTasmeeaDetailsPDF();
+  }
 };
 
 function renderNotificationsView() {
@@ -1801,17 +2324,19 @@ window.handleUserProfileSave = function (e) {
 
   const nameEl = document.getElementById("current-user-name");
   const welcomeEl = document.getElementById("welcome-message");
-  const avatarEl = document.getElementById("current-user-avatar");
   if (nameEl) nameEl.textContent = newName;
   if (welcomeEl) welcomeEl.textContent = `مرحباً ${newName}`;
-  if (avatarEl) avatarEl.textContent = newName ? newName.charAt(0) : "م";
+  if (typeof updateSidebarUserAvatar === "function")
+    updateSidebarUserAvatar(user, newName ? newName.charAt(0) : "م");
 
   alert("✅ تم حفظ وتحديث البيانات الشخصية للمديرة بنجاح!");
 };
 
 window.handleLogout = function () {
   window.currentUser = null;
+  if (window.autoLogoutTimer) clearTimeout(window.autoLogoutTimer);
   localStorage.removeItem("HALAQAT_SESSION_USER");
+  localStorage.removeItem("HALAQAT_SESSION_TIME");
   showMainLoginView();
 };
 

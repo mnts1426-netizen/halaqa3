@@ -5,6 +5,36 @@
  * ==========================================================================
  */
 
+// تنسيق تاريخ محلي "YYYY-MM-DD" بدون المرور عبر toISOString() (التي تحوّل للتوقيت العالمي
+// UTC فتُرجع أحياناً اليوم السابق في المناطق ذات الفارق الموجب كالسعودية UTC+3، وهي
+// السبب الجذري لظهور "اليوم السابق" بدل التاريخ المطلوب فعلياً في أسماء ملفات التقارير)
+function toLocalDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// تنسيق "اسم اليوم شهر/يوم" لعرض أكثر وضوحاً في تقارير السجل اليومي
+function formatArabicDayAndDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d.getTime())) return dateStr;
+  const days = [
+    "الأحد",
+    "الاثنين",
+    "الثلاثاء",
+    "الأربعاء",
+    "الخميس",
+    "الجمعة",
+    "السبت",
+  ];
+  const dayName = days[d.getDay()];
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  return `${dayName} ${m}/${day}`;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const reportTypeSelect = document.getElementById("report-type-select");
   if (reportTypeSelect) {
@@ -12,31 +42,71 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   populateReportStudentsDropdown();
   populateReportWeekRangeDropdowns();
+
+  // ضبط التاريخ التلقائي على اليوم الحالي لتسهيل الاستخدام
+  const dateFromInput = document.getElementById("report-date-from");
+  const dateToInput = document.getElementById("report-date-to");
+  const today = toLocalDateStr(new Date());
+  if (dateFromInput && !dateFromInput.value) dateFromInput.value = today;
+  if (dateToInput && !dateToInput.value) dateToInput.value = today;
 });
 
-// تعبئة قوائم نطاق أسابيع التميز (من - إلى)
+// نقطة انطلاق ترقيم أسابيع التميز (الأسبوع الأول): يوم الأحد 17 ربيع الأول 1448هـ (30 أغسطس 2026م)
+const TAMAYUZ_EPOCH_SUNDAY = new Date(2026, 7, 30);
+
+function getHijriShortLabel(date) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-u-ca-islamic-umalqura", {
+      day: "numeric",
+      month: "numeric",
+    }).formatToParts(date);
+    const day = parts.find((p) => p.type === "day")?.value || "";
+    const month = parts.find((p) => p.type === "month")?.value || "";
+    return day && month ? `${day}/${month}` : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+function getCurrentTamayuzWeekNumber() {
+  const now = new Date();
+  const nowSunday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - now.getDay(),
+  );
+  const diffDays = Math.round(
+    (nowSunday - TAMAYUZ_EPOCH_SUNDAY) / (24 * 60 * 60 * 1000),
+  );
+  const weekNum = Math.floor(diffDays / 7) + 1;
+  return weekNum < 1 ? 1 : weekNum;
+}
+
+function getSundayDateForWeekNumber(weekNumber) {
+  const d = new Date(TAMAYUZ_EPOCH_SUNDAY);
+  d.setDate(d.getDate() + (weekNumber - 1) * 7);
+  return d;
+}
+
+// تعبئة قوائم نطاق أسابيع التميز (من - إلى) بترقيم مطلق ثابت مبني على نقطة انطلاق
+// (تاريخ الأحد الأول)، مع عرض التاريخ الهجري المقابل لكل أسبوع بجانب رقمه
 function populateReportWeekRangeDropdowns() {
   const weekFromSelect = document.getElementById("report-week-from");
   const weekToSelect = document.getElementById("report-week-to");
   if (!weekFromSelect || !weekToSelect) return;
 
-  const weekOptions = [
-    { id: "current", label: "الأسبوع الحالي" },
-    { id: "w_1", label: "الأسبوع السابق (1)" },
-    { id: "w_2", label: "الأسبوع السابق (2)" },
-    { id: "w_3", label: "الأسبوع السابق (3)" },
-    { id: "w_4", label: "الأسبوع السابق (4)" },
-  ];
+  const currentWeekNum = getCurrentTamayuzWeekNumber();
 
   let optionsHtml = "";
-  weekOptions.forEach((w) => {
-    optionsHtml += `<option value="${w.id}">${w.label}</option>`;
-  });
+  for (let n = 1; n <= currentWeekNum; n++) {
+    const hijriLabel = getHijriShortLabel(getSundayDateForWeekNumber(n));
+    optionsHtml += `<option value="${n}">الأسبوع ${n}${hijriLabel ? ` (${hijriLabel})` : ""}</option>`;
+  }
 
   weekFromSelect.innerHTML = optionsHtml;
   weekToSelect.innerHTML = optionsHtml;
-  weekToSelect.value = "current";
-  weekFromSelect.value = "w_4";
+  weekToSelect.value = String(currentWeekNum);
+  weekFromSelect.value = String(Math.max(1, currentWeekNum - 4));
 }
 
 function populateReportStudentsDropdown() {
@@ -105,9 +175,32 @@ function handleReportTypeChange() {
     if (dateFromGroup) dateFromGroup.style.display = "none";
     if (dateToGroup) dateToGroup.style.display = "none";
     populateReportWeekRangeDropdowns();
+  } else if (reportType === "circle_daily") {
+    // تقرير إنجاز يوم الحلقة مخصص لكامل طالبات الحلقة في يوم محدد
+    if (studentGroup) studentGroup.style.display = "none";
+    if (weekRangeGroup) weekRangeGroup.classList.add("style-hidden");
+    if (dateFromGroup) {
+      dateFromGroup.style.display = "block";
+      const lbl = dateFromGroup.querySelector("label");
+      if (lbl) lbl.textContent = "تاريخ اليوم المحدد";
+    }
+    if (dateToGroup) dateToGroup.style.display = "none";
+  } else if (reportType === "student_daily") {
+    if (studentGroup) studentGroup.style.display = "block";
+    if (weekRangeGroup) weekRangeGroup.classList.add("style-hidden");
+    if (dateFromGroup) {
+      dateFromGroup.style.display = "block";
+      const lbl = dateFromGroup.querySelector("label");
+      if (lbl) lbl.textContent = "من تاريخ";
+    }
+    if (dateToGroup) dateToGroup.style.display = "block";
   } else {
     if (weekRangeGroup) weekRangeGroup.classList.add("style-hidden");
-    if (dateFromGroup) dateFromGroup.style.display = "block";
+    if (dateFromGroup) {
+      dateFromGroup.style.display = "block";
+      const lbl = dateFromGroup.querySelector("label");
+      if (lbl) lbl.textContent = "من تاريخ";
+    }
     if (dateToGroup) dateToGroup.style.display = "block";
   }
 
@@ -118,27 +211,15 @@ function handleReportTypeChange() {
   if (thead) thead.innerHTML = "";
 }
 
-function getSundayToWednesdayDatesByWeekOption(weekOption) {
-  const now = new Date();
-  const dayOfWeek = now.getDay();
-
-  let offsetWeeks = 0;
-  if (weekOption === "w_1") offsetWeeks = 1;
-  else if (weekOption === "w_2") offsetWeeks = 2;
-  else if (weekOption === "w_3") offsetWeeks = 3;
-  else if (weekOption === "w_4") offsetWeeks = 4;
-
-  const sunday = new Date(now);
-  sunday.setDate(now.getDate() - dayOfWeek - offsetWeeks * 7);
-
+// يحسب تواريخ أيام الأحد إلى الأربعاء (أيام أسبوع التميز الأربعة) لأسبوع مُرقَّم
+// مطلق (بدءاً من نقطة انطلاق ثابتة)، بدلاً من الاعتماد على أسماء أسابيع نسبية لليوم الحالي
+function getSundayToWednesdayDatesForWeekNumber(weekNumber) {
+  const sunday = getSundayDateForWeekNumber(weekNumber);
   const days = [];
   for (let i = 0; i < 4; i++) {
     const d = new Date(sunday);
     d.setDate(sunday.getDate() + i);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    days.push(`${y}-${m}-${day}`);
+    days.push(toLocalDateStr(d));
   }
   return days;
 }
@@ -164,8 +245,13 @@ async function generateReport() {
     document.getElementById("report-circle-select")?.value || "all";
   const dateFrom = document.getElementById("report-date-from")?.value;
   const dateTo = document.getElementById("report-date-to")?.value;
-  const weekFrom = document.getElementById("report-week-from")?.value || "w_4";
-  const weekTo = document.getElementById("report-week-to")?.value || "current";
+  const currentTamayuzWeekNum = getCurrentTamayuzWeekNumber();
+  const weekFrom =
+    document.getElementById("report-week-from")?.value ||
+    String(Math.max(1, currentTamayuzWeekNum - 4));
+  const weekTo =
+    document.getElementById("report-week-to")?.value ||
+    String(currentTamayuzWeekNum);
 
   const printTitle = document.getElementById("print-report-title");
   const printPeriod = document.getElementById("print-report-period");
@@ -193,7 +279,7 @@ async function generateReport() {
     }
 
     headHtml = `
-      <tr>
+      <tr style="background: var(--primary-brown); color: #fff;">
         <th style="width: 50px; text-align: center;">م</th>
         <th>اسم الطالبة</th>
         <th>الحلقة</th>
@@ -287,29 +373,19 @@ async function generateReport() {
     }
 
     headHtml = `
-      <tr>
-        <th rowspan="2" style="vertical-align: middle; text-align: center;">م</th>
-        <th rowspan="2" style="vertical-align: middle;">اسم الطالبة</th>
-        <th rowspan="2" style="vertical-align: middle; text-align: center; line-height: 1.2;">أيام<br>الحضور</th>
-        <th rowspan="2" style="vertical-align: middle; text-align: center; line-height: 1.2;">أيام<br>الغياب</th>
-        <th rowspan="2" style="vertical-align: middle; text-align: center; line-height: 1.2;">مرات<br>التميز</th>
-        <th colspan="4" class="text-center">الدرس الجديد</th>
-        <th colspan="4" class="text-center">المراجعة</th>
-        <th colspan="4" class="text-center">التلاوة</th>
-      </tr>
-      <tr>
-        <th>ممتاز</th>
-        <th>جيد جداً</th>
-        <th>جيد</th>
-        <th>يعيد</th>
-        <th>ممتاز</th>
-        <th>جيد جداً</th>
-        <th>جيد</th>
-        <th>يعيد</th>
-        <th>ممتاز</th>
-        <th>جيد جداً</th>
-        <th>جيد</th>
-        <th>يعيد</th>
+      <tr style="background: var(--primary-brown); color: #fff;">
+        <th style="width: 35px; text-align: center;">م</th>
+        <th>اسم الطالبة</th>
+        <th style="text-align: center;">أيام الحضور</th>
+        <th style="text-align: center;">أيام التأخر</th>
+        <th style="text-align: center;">أيام الاستئذان</th>
+        <th style="text-align: center;">أيام الغياب</th>
+        <th style="text-align: center;">بطاقات التميز</th>
+        <th style="text-align: center;">مرحليات</th>
+        <th style="text-align: center;">ممتاز</th>
+        <th style="text-align: center;">جيد جداً</th>
+        <th style="text-align: center;">جيد</th>
+        <th style="text-align: center;">يعيد</th>
       </tr>
     `;
 
@@ -326,7 +402,7 @@ async function generateReport() {
 
     if (students.length === 0) {
       bodyHtml =
-        '<tr><td colspan="17" class="text-center text-muted p-4">لا توجد بيانات مطابقة</td></tr>';
+        '<tr><td colspan="12" class="text-center text-muted p-4">لا توجد بيانات مطابقة</td></tr>';
     } else {
       students.forEach((s, idx) => {
         let stuAtt = (window.appStore.attendance || []).filter(
@@ -336,83 +412,64 @@ async function generateReport() {
         if (dateTo) stuAtt = stuAtt.filter((a) => a.date <= dateTo);
 
         const presentCount = stuAtt.filter(
-          (a) => a.status === "present" || a.status === "late",
+          (a) => a.status === "present",
+        ).length;
+        const lateCount = stuAtt.filter((a) => a.status === "late").length;
+        const excusedCount = stuAtt.filter(
+          (a) => a.status === "excused",
         ).length;
         const absentCount = stuAtt.filter((a) => a.status === "absent").length;
 
-        let stuTasmeea = (window.appStore.tasmeea || []).filter(
+        // بطاقات التميز: نفس منطق لوحة نجمات التميز الأسبوعي (آخر 16 أسبوعاً)
+        let tamayuzCount = 0;
+        if (typeof checkStudentCurrentWeekTamayuz === "function") {
+          for (let w = 0; w < 16; w++) {
+            if (checkStudentCurrentWeekTamayuz(s.id, w)) tamayuzCount++;
+          }
+        }
+
+        // مرحليات (عدد الاختبارات)
+        const testsCount = (window.appStore.tests || []).filter(
+          (t) => t.studentId === s.id,
+        ).length;
+
+        // التقديرات (ممتاز / جيد جداً / جيد / يعيد) في كل المقررات مجتمعة
+        let tasmList = (window.appStore.tasmeea || []).filter(
           (t) => t.studentId === s.id,
         );
-        if (dateFrom) stuTasmeea = stuTasmeea.filter((t) => t.date >= dateFrom);
-        if (dateTo) stuTasmeea = stuTasmeea.filter((t) => t.date <= dateTo);
+        if (dateFrom) tasmList = tasmList.filter((t) => t.date >= dateFrom);
+        if (dateTo) tasmList = tasmList.filter((t) => t.date <= dateTo);
 
-        const countRating = (records, field, type) => {
-          return records.filter((r) => {
-            const val = (r[field] || "").trim();
-            if (type === "ممتاز") return val.includes("ممتاز");
-            if (type === "جيد جداً") return val.includes("جيد جداً");
-            if (type === "جيد") return val === "جيد" || val === "جيد مرتفع";
-            if (type === "يعيد")
-              return val === "يعيد" || val === "إعادة" || val === "ضعيف";
-            return false;
-          }).length;
+        const countRatingTotal = (type) => {
+          let count = 0;
+          tasmList.forEach((t) => {
+            ["hifzRating", "murajaaRating", "tilawaRating"].forEach((f) => {
+              const val = (t[f] || "").trim();
+              if (type === "ممتاز" && val.includes("ممتاز")) count++;
+              else if (type === "جيد جداً" && val.includes("جيد جداً"))
+                count++;
+              else if (type === "جيد" && val === "جيد") count++;
+              else if (type === "يعيد" && (val === "يعيد" || val === "ضعيف"))
+                count++;
+            });
+          });
+          return count;
         };
-
-        const hifzMumtaz = countRating(stuTasmeea, "hifzRating", "ممتاز");
-        const hifzJayyidJiddan = countRating(
-          stuTasmeea,
-          "hifzRating",
-          "جيد جداً",
-        );
-        const hifzJayyid = countRating(stuTasmeea, "hifzRating", "جيد");
-        const hifzRe = countRating(stuTasmeea, "hifzRating", "يعيد");
-
-        const murajaaMumtaz = countRating(stuTasmeea, "murajaaRating", "ممتاز");
-        const murajaaJayyidJiddan = countRating(
-          stuTasmeea,
-          "murajaaRating",
-          "جيد جداً",
-        );
-        const murajaaJayyid = countRating(stuTasmeea, "murajaaRating", "جيد");
-        const murajaaRe = countRating(stuTasmeea, "murajaaRating", "يعيد");
-
-        const tilawaMumtaz = countRating(stuTasmeea, "tilawaRating", "ممتاز");
-        const tilawaJayyidJiddan = countRating(
-          stuTasmeea,
-          "tilawaRating",
-          "جيد جداً",
-        );
-        const tilawaJayyid = countRating(stuTasmeea, "tilawaRating", "جيد");
-        const tilawaRe = countRating(stuTasmeea, "tilawaRating", "يعيد");
-
-        const tamayuzCount = stuTasmeea.filter(
-          (t) =>
-            (t.rating || "").includes("ممتاز") ||
-            (t.hifzRating || "").includes("ممتاز"),
-        ).length;
 
         bodyHtml += `
           <tr>
             <td style="text-align: center;">${idx + 1}</td>
-            <td style="font-weight:700;">${s.name}</td>
-            <td style="font-weight:700; color: #2e7d32; text-align: center;">${presentCount}</td>
-            <td style="font-weight:700; color: #c62828; text-align: center;">${absentCount}</td>
-            <td style="font-weight:700; color: var(--primary-brown); text-align: center;">${tamayuzCount}</td>
-            
-            <td>${hifzMumtaz}</td>
-            <td>${hifzJayyidJiddan}</td>
-            <td>${hifzJayyid}</td>
-            <td>${hifzRe}</td>
-
-            <td>${murajaaMumtaz}</td>
-            <td>${murajaaJayyidJiddan}</td>
-            <td>${murajaaJayyid}</td>
-            <td>${murajaaRe}</td>
-
-            <td>${tilawaMumtaz}</td>
-            <td>${tilawaJayyidJiddan}</td>
-            <td>${tilawaJayyid}</td>
-            <td>${tilawaRe}</td>
+            <td style="font-weight: 800;">${escapeHtml(s.name)}</td>
+            <td style="font-weight: 700; color: #2e7d32; text-align: center;">${presentCount}</td>
+            <td style="font-weight: 700; color: #b78103; text-align: center;">${lateCount}</td>
+            <td style="font-weight: 700; color: #1565c0; text-align: center;">${excusedCount}</td>
+            <td style="font-weight: 700; color: #c62828; text-align: center;">${absentCount}</td>
+            <td style="font-weight: 700; color: var(--primary-brown); text-align: center;">${tamayuzCount}</td>
+            <td style="text-align: center;">${testsCount}</td>
+            <td style="font-weight: 700; color: #2e7d32; text-align: center;">${countRatingTotal("ممتاز")}</td>
+            <td style="font-weight: 700; color: var(--primary-brown); text-align: center;">${countRatingTotal("جيد جداً")}</td>
+            <td style="font-weight: 700; text-align: center;">${countRatingTotal("جيد")}</td>
+            <td style="font-weight: 700; color: #c62828; text-align: center;">${countRatingTotal("يعيد")}</td>
           </tr>
         `;
       });
@@ -438,7 +495,7 @@ async function generateReport() {
     }
 
     headHtml = `
-      <tr>
+      <tr style="background: var(--primary-brown); color: #fff;">
         <th style="width: 50px; text-align: center;">م</th>
         <th>اسم الطالبة</th>
         <th>الدرس الجديد</th>
@@ -492,7 +549,7 @@ async function generateReport() {
     }
 
     headHtml = `
-      <tr>
+      <tr style="background: var(--primary-brown); color: #fff;">
         <th style="width: 60px; text-align: center;">م</th>
         <th>اسم الطالبة</th>
         <th>الحلقة</th>
@@ -511,13 +568,18 @@ async function generateReport() {
       students = students.filter((s) => s.id === selectedStudentId);
     }
 
-    const allWeekKeys = ["w_4", "w_3", "w_2", "w_1", "current"];
-    const startIdx = allWeekKeys.indexOf(weekFrom);
-    const endIdx = allWeekKeys.indexOf(weekTo);
-    const selectedWeeks =
-      startIdx > -1 && endIdx >= startIdx
-        ? allWeekKeys.slice(startIdx, endIdx + 1)
-        : ["current"];
+    const weekFromNum = parseInt(weekFrom, 10);
+    const weekToNum = parseInt(weekTo, 10);
+    const selectedWeeks = [];
+    if (
+      !isNaN(weekFromNum) &&
+      !isNaN(weekToNum) &&
+      weekToNum >= weekFromNum
+    ) {
+      for (let w = weekFromNum; w <= weekToNum; w++) selectedWeeks.push(w);
+    } else {
+      selectedWeeks.push(getCurrentTamayuzWeekNumber());
+    }
 
     const isCleanMumtazOrEmpty = (r) => {
       if (!r) return true;
@@ -533,7 +595,7 @@ async function generateReport() {
       let badgesSum = 0;
 
       selectedWeeks.forEach((wk) => {
-        const weekDays = getSundayToWednesdayDatesByWeekOption(wk);
+        const weekDays = getSundayToWednesdayDatesForWeekNumber(wk);
         if (!weekDays || weekDays.length !== 4) return;
 
         let isQualifiedForWeek = true;
@@ -550,7 +612,13 @@ async function generateReport() {
           const tasm = (window.appStore?.tasmeea || []).find(
             (t) => t.studentId === s.id && t.date === day,
           );
-          if (tasm) {
+          // لا يوجد سجل تسميع مُعتمَد فعلياً لهذا اليوم = يُعامل كـ"يعيد" (يمنع مرور
+          // طالبة "مُرحَّل" لها لم يُعتمد لها شيء فعلياً من قبل المعلمة كمتميزة)
+          if (!tasm) {
+            isQualifiedForWeek = false;
+            break;
+          }
+          {
             if (
               !isCleanMumtazOrEmpty(tasm.hifzRating) ||
               !isCleanMumtazOrEmpty(tasm.murajaaRating) ||
@@ -597,8 +665,285 @@ async function generateReport() {
     }
   }
 
+  // 5. تقرير إنجاز طالبات الحلقة اليومي (لقطة يوم واحد لكل طالبات الحلقة)
+  else if (reportType === "circle_daily") {
+    if (printTitle)
+      printTitle.textContent = "تقرير إنجاز طالبات الحلقة اليومي";
+
+    const targetDate = dateFrom || dateTo || toLocalDateStr(new Date());
+    if (printPeriod) {
+      printPeriod.textContent = `اليوم المحدد: ${formatArabicDayAndDate(targetDate)}`;
+      printPeriod.style.display = "block";
+    }
+
+    headHtml = `
+      <tr style="background: var(--primary-brown); color: #fff;">
+        <th style="width: 40px; text-align: center;">م</th>
+        <th>اسم الطالبة</th>
+        <th>حالة التحضير</th>
+        <th>منهج الدرس</th>
+        <th>التقدير</th>
+        <th>منهج المراجعة</th>
+        <th>التقدير</th>
+        <th>منهج التلاوة</th>
+        <th>التقدير</th>
+      </tr>
+    `;
+
+    if (circleId === "all") {
+      bodyHtml =
+        '<tr><td colspan="9" class="text-center text-muted p-4">يرجى اختيار الحلقة أولاً لعرض هذا التقرير</td></tr>';
+    } else {
+      let students = (window.appStore.students || []).filter(
+        (s) =>
+          s.circleId === circleId &&
+          s.status !== "pending" &&
+          s.status !== "archived",
+      );
+      students.sort((a, b) => (a.name || "").localeCompare(b.name || "", "ar"));
+
+      if (students.length === 0) {
+        bodyHtml =
+          '<tr><td colspan="9" class="text-center text-muted p-4">لا توجد طالبات مسجلات بهذه الحلقة</td></tr>';
+      } else {
+        students.forEach((s, idx) => {
+          const att = (window.appStore.attendance || []).find(
+            (a) => a.studentId === s.id && a.date === targetDate,
+          );
+          let attStatus = "غير مسجل";
+          if (att) {
+            if (att.status === "present") attStatus = "حاضرة";
+            else if (att.status === "absent") attStatus = "غائبة";
+            else if (att.status === "late") attStatus = "متأخرة";
+            else if (att.status === "excused") attStatus = "مستأذنة";
+          }
+
+          const tasm =
+            (window.appStore.tasmeea || []).find(
+              (t) => t.studentId === s.id && t.date === targetDate,
+            ) || {};
+
+          bodyHtml += `
+            <tr>
+              <td style="text-align: center;">${idx + 1}</td>
+              <td style="font-weight: 800;">${escapeHtml(s.name)}</td>
+              <td style="text-align: center;">${attStatus}</td>
+              <td>${escapeHtml(tasm.hifzSurah) || "لا يوجد"}</td>
+              <td style="text-align: center;">${escapeHtml(tasm.hifzRating) || "—"}</td>
+              <td>${escapeHtml(tasm.murajaaSurah) || "لا يوجد"}</td>
+              <td style="text-align: center;">${escapeHtml(tasm.murajaaRating) || "—"}</td>
+              <td>${escapeHtml(tasm.tilawaSurah) || "لا يوجد"}</td>
+              <td style="text-align: center;">${escapeHtml(tasm.tilawaRating) || "—"}</td>
+            </tr>
+          `;
+        });
+      }
+    }
+  }
+
+  // 6. تقرير إنجاز طالبة محددة يوماً بيوم عبر فترة زمنية
+  else if (reportType === "student_daily") {
+    if (selectedStudentId === "all") {
+      alert("⚠️ يرجى اختيار الطالبة المستهدفة لاستخراج تقرير إنجازها اليومي.");
+      thead.innerHTML = "";
+      tbody.innerHTML =
+        '<tr><td class="text-center text-muted p-4">يرجى اختيار الطالبة أولاً</td></tr>';
+      return;
+    }
+
+    const studentObj = (window.appStore.students || []).find(
+      (s) => s.id === selectedStudentId,
+    );
+    if (printTitle) printTitle.textContent = "تقرير إنجاز طالبة محددة";
+
+    // في هذا التقرير تحديداً تظهر مكان الفترة بيانات الطالبة نفسها (اسمها) بدل التاريخ،
+    // لأن التقرير أصلاً مخصص لطالبة واحدة محددة معروفة سلفاً من القائمة المنسدلة
+    const startStr = dateFrom || "2026-08-30";
+    const endStr = dateTo || toLocalDateStr(new Date());
+    if (printPeriod) {
+      printPeriod.textContent = `الطالبة: ${studentObj ? studentObj.name : "—"}`;
+      printPeriod.style.display = "block";
+    }
+
+    headHtml = `
+      <tr style="background: var(--primary-brown); color: #fff;">
+        <th>اليوم والتاريخ</th>
+        <th>حالة التحضير</th>
+        <th>منهج الدرس</th>
+        <th>التقدير</th>
+        <th>منهج المراجعة</th>
+        <th>التقدير</th>
+        <th>منهج التلاوة</th>
+        <th>التقدير</th>
+      </tr>
+    `;
+
+    const dateList = [];
+    const cur = new Date(startStr + "T00:00:00");
+    const end = new Date(endStr + "T00:00:00");
+    while (cur <= end) {
+      dateList.push(toLocalDateStr(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    if (dateList.length === 0) {
+      bodyHtml =
+        '<tr><td colspan="8" class="text-center text-muted p-4">لا توجد أيام مطابقة ضمن الفترة المحددة</td></tr>';
+    } else {
+      dateList.forEach((dStr) => {
+        const dayFormatted = formatArabicDayAndDate(dStr);
+        const att = (window.appStore.attendance || []).find(
+          (a) => a.studentId === selectedStudentId && a.date === dStr,
+        );
+        let attStatus = "غير مسجل";
+        if (att) {
+          if (att.status === "present") attStatus = "حاضرة";
+          else if (att.status === "absent") attStatus = "غائبة";
+          else if (att.status === "late") attStatus = "متأخرة";
+          else if (att.status === "excused") attStatus = "مستأذنة";
+        }
+
+        const tasm =
+          (window.appStore.tasmeea || []).find(
+            (t) => t.studentId === selectedStudentId && t.date === dStr,
+          ) || {};
+
+        bodyHtml += `
+          <tr>
+            <td style="font-weight: 700;">${dayFormatted}</td>
+            <td style="text-align: center;">${attStatus}</td>
+            <td>${escapeHtml(tasm.hifzSurah) || "لا يوجد"}</td>
+            <td style="text-align: center;">${escapeHtml(tasm.hifzRating) || "لا يوجد"}</td>
+            <td>${escapeHtml(tasm.murajaaSurah) || "لا يوجد"}</td>
+            <td style="text-align: center;">${escapeHtml(tasm.murajaaRating) || "لا يوجد"}</td>
+            <td>${escapeHtml(tasm.tilawaSurah) || "لا يوجد"}</td>
+            <td style="text-align: center;">${escapeHtml(tasm.tilawaRating) || "لا يوجد"}</td>
+          </tr>
+        `;
+      });
+    }
+  }
+
+  // 7. تقرير بداية ونهاية المنهج (بداية ونهاية ما وصلت إليه كل طالبة في كل مقرر)
+  else if (reportType === "curriculum_start_end") {
+    if (printTitle) printTitle.textContent = "تقرير بداية ونهاية المنهج";
+
+    if (printPeriod) {
+      if (dateFrom && dateTo) {
+        printPeriod.textContent = `الفترة: من تاريخ ${dateFrom} إلى تاريخ ${dateTo}`;
+      } else if (dateFrom) {
+        printPeriod.textContent = `من تاريخ: ${dateFrom}`;
+      } else if (dateTo) {
+        printPeriod.textContent = `إلى تاريخ: ${dateTo}`;
+      } else {
+        printPeriod.textContent = "كامل الفترة المسجلة";
+      }
+      printPeriod.style.display = "block";
+    }
+
+    headHtml = `
+      <tr style="background: var(--primary-brown); color: #fff;">
+        <th style="width: 40px; text-align: center;">م</th>
+        <th>اسم الطالبة</th>
+        <th>منهج درس</th>
+        <th>منهج مراجعة</th>
+        <th>منهج تلاوة</th>
+      </tr>
+    `;
+
+    let students = (window.appStore.students || []).filter(
+      (s) =>
+        s.circleId === circleId &&
+        s.status !== "pending" &&
+        s.status !== "archived",
+    );
+    if (selectedStudentId !== "all") {
+      students = students.filter((s) => s.id === selectedStudentId);
+    }
+    students.sort((a, b) => (a.name || "").localeCompare(b.name || "", "ar"));
+
+    if (circleId === "all") {
+      bodyHtml =
+        '<tr><td colspan="5" class="text-center text-muted p-4">يرجى اختيار الحلقة أولاً لعرض هذا التقرير</td></tr>';
+    } else if (students.length === 0) {
+      bodyHtml =
+        '<tr><td colspan="5" class="text-center text-muted p-4">لا توجد بيانات مطابقة للطالبات</td></tr>';
+    } else {
+      students.forEach((s, idx) => {
+        let tasmList = (window.appStore.tasmeea || []).filter(
+          (t) => t.studentId === s.id,
+        );
+        if (dateFrom) tasmList = tasmList.filter((t) => t.date >= dateFrom);
+        if (dateTo) tasmList = tasmList.filter((t) => t.date <= dateTo);
+        tasmList.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+
+        const hifzWithVal = tasmList.filter(
+          (t) => t.hifzSurah && t.hifzSurah.trim() !== "",
+        );
+        const murajaaWithVal = tasmList.filter(
+          (t) => t.murajaaSurah && t.murajaaSurah.trim() !== "",
+        );
+        const tilawaWithVal = tasmList.filter(
+          (t) => t.tilawaSurah && t.tilawaSurah.trim() !== "",
+        );
+
+        const hifzStart = hifzWithVal[0]?.hifzSurah || "—";
+        const hifzEnd = hifzWithVal[hifzWithVal.length - 1]?.hifzSurah || "—";
+        const murajaaStart = murajaaWithVal[0]?.murajaaSurah || "—";
+        const murajaaEnd =
+          murajaaWithVal[murajaaWithVal.length - 1]?.murajaaSurah || "—";
+        const tilawaStart = tilawaWithVal[0]?.tilawaSurah || "—";
+        const tilawaEnd =
+          tilawaWithVal[tilawaWithVal.length - 1]?.tilawaSurah || "—";
+
+        bodyHtml += `
+          <tr>
+            <td style="text-align: center;">${idx + 1}</td>
+            <td style="font-weight: 800;">${escapeHtml(s.name)}</td>
+            <td style="line-height: 1.8;">
+              <div><strong>البداية :</strong> ${escapeHtml(hifzStart)}</div>
+              <div><strong>النهاية :</strong> ${escapeHtml(hifzEnd)}</div>
+            </td>
+            <td style="line-height: 1.8;">
+              <div><strong>البداية :</strong> ${escapeHtml(murajaaStart)}</div>
+              <div><strong>النهاية :</strong> ${escapeHtml(murajaaEnd)}</div>
+            </td>
+            <td style="line-height: 1.8;">
+              <div><strong>البداية :</strong> ${escapeHtml(tilawaStart)}</div>
+              <div><strong>النهاية :</strong> ${escapeHtml(tilawaEnd)}</div>
+            </td>
+          </tr>
+        `;
+      });
+    }
+  }
+
   thead.innerHTML = headHtml;
   tbody.innerHTML = bodyHtml;
+
+  // بناء الترويسة والتذييل الرسميين الكاملين (نفس التصميم المعتمد في بقية أرجاء
+  // النظام عبر buildOfficialPrintChrome) لعرضهما عند الطباعة/PDF/Word فقط - مركزياً
+  // هنا بدل تكرار المنطق داخل كل فرع من فروع أنواع التقارير أعلاه
+  const chromeHeaderSlot = document.getElementById("report-print-header");
+  const chromeFooterSlot = document.getElementById("report-print-footer");
+  if (
+    chromeHeaderSlot &&
+    typeof window.buildOfficialPrintChrome === "function"
+  ) {
+    const circleNameForChrome =
+      circleId !== "all"
+        ? (window.appStore?.circles || []).find((c) => c.id === circleId)
+            ?.name || ""
+        : "";
+    const chrome = window.buildOfficialPrintChrome(
+      printTitle?.textContent || "تقرير رسمي",
+      circleNameForChrome,
+      "",
+      printPeriod?.textContent || "",
+    );
+    chromeHeaderSlot.innerHTML = chrome.header;
+    if (chromeFooterSlot) chromeFooterSlot.innerHTML = chrome.footer;
+  }
 }
 
 function exportReportExcel() {
@@ -612,10 +957,15 @@ function exportReportExcel() {
     return;
   }
   const wb = XLSX.utils.table_to_book(table, { sheet: "التقرير الرسمي" });
-  XLSX.writeFile(
-    wb,
-    `تقرير_الدار_${new Date().toISOString().split("T")[0]}.xlsx`,
-  );
+  XLSX.writeFile(wb, `تقرير_الدار_${toLocalDateStr(new Date())}.xlsx`);
+}
+
+// يقرأ اختيار اتجاه الصفحة (طولي/عرضي) إن وُجد عنصره في الواجهة، ويحافظ على
+// السلوك الحالي (عرضي) افتراضياً إن لم يُضَف عنصر الاختيار للواجهة بعد
+function getSelectedReportOrientation() {
+  const portraitRadio = document.getElementById("report-orientation-portrait");
+  if (portraitRadio) return portraitRadio.checked ? "portrait" : "landscape";
+  return "landscape";
 }
 
 function downloadReportPDF() {
@@ -624,21 +974,247 @@ function downloadReportPDF() {
 
   const reportTitle =
     document.getElementById("print-report-title")?.textContent || "تقرير_رسمي";
+  const orientation = getSelectedReportOrientation();
 
   if (typeof html2pdf !== "undefined") {
     const opt = {
       margin: [10, 10, 10, 10],
-      filename: `${reportTitle.trim().replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.pdf`,
+      filename: `${reportTitle.trim().replace(/\s+/g, "_")}_${toLocalDateStr(new Date())}.pdf`,
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: "mm", format: "a4", orientation: "landscape" },
+      jsPDF: { unit: "mm", format: "a4", orientation: orientation },
     };
-    html2pdf().set(opt).from(element).save();
+    // ترويسة التقرير الرسمية (.print-official-header) مخفية أثناء العرض العادي على
+    // الشاشة وتظهر فقط عبر تنسيقات "@media print" - لكن أداة html2pdf تلتقط لقطة من
+    // الصفحة كما تظهر حالياً على الشاشة دون تفعيل هذه التنسيقات، ما كان يجعل الترويسة
+    // (الشعار وعنوان التقرير) تختفي تماماً من ملف PDF الناتج. لذا نُظهرها يدوياً هنا
+    // فقط أثناء التوليد الفعلي للـPDF ثم نعيدها لحالتها الأصلية فوراً بعد الحفظ.
+    const header = element.querySelector(".print-official-header");
+    const footer = element.querySelector(".print-official-footer");
+    const prevHeaderDisplay = header ? header.style.display : "";
+    const prevFooterDisplay = footer ? footer.style.display : "";
+    if (header) header.style.display = "block";
+    if (footer) footer.style.display = "block";
+    const restoreDisplay = () => {
+      if (header) header.style.display = prevHeaderDisplay;
+      if (footer) footer.style.display = prevFooterDisplay;
+    };
+    html2pdf()
+      .set(opt)
+      .from(element)
+      .save()
+      .then(restoreDisplay)
+      .catch(restoreDisplay);
   } else {
     window.print();
   }
 }
 
+// تحويل صورة (شعار) إلى Base64 لتضمينها مباشرة داخل ملف Word - بدون هذا التحويل
+// تظهر الشعارات مكسورة عند فتح الملف لأن مسارها النسبي لا يُفهم خارج الموقع نفسه
+async function imageToDataUri(url) {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
+// تنزيل التقرير كملف Word (بنفس الترويسة والشعار والجدول الظاهر تماماً) عبر تحويل
+// محتوى التقرير إلى مستند HTML متوافق مع Word (بدون أي مكتبة خارجية إضافية)
+async function downloadReportWord() {
+  const element = document.getElementById("report-results-wrapper");
+  const tbody = document.getElementById("report-tbody");
+  if (!element || !tbody || !tbody.innerHTML.trim()) {
+    alert("⚠️ يرجى استخراج التقرير أولاً قبل التنزيل!");
+    return;
+  }
+
+  const reportTitle =
+    document.getElementById("print-report-title")?.textContent || "تقرير_الدار";
+  const safeFilename = reportTitle.trim().replace(/\s+/g, "_");
+
+  // تضمين الشعار كـ Base64 داخل نسخة مؤقتة من محتوى التقرير فقط (دون المساس بالعنصر
+  // الأصلي الظاهر على الشاشة)، وإظهار الترويسة الرسمية فيها (مخفية أصلاً على الشاشة)
+  const contentClone = element.cloneNode(true);
+  const clonedHeader = contentClone.querySelector(".print-official-header");
+  if (clonedHeader) clonedHeader.style.display = "block";
+  const clonedFooter = contentClone.querySelector(".print-official-footer");
+  if (clonedFooter) clonedFooter.style.display = "block";
+
+  const logoImgs = Array.from(contentClone.querySelectorAll("img"));
+  await Promise.all(
+    logoImgs.map(async (img) => {
+      const dataUri = await imageToDataUri(img.getAttribute("src"));
+      if (dataUri) img.setAttribute("src", dataUri);
+    }),
+  );
+
+  const wordHtml = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="utf-8" />
+        <title>${reportTitle}</title>
+        <!--[if gte mso 9]>
+        <xml>
+          <w:WordDocument>
+            <w:View>Print</w:View>
+            <w:Zoom>100</w:Zoom>
+          </w:WordDocument>
+        </xml>
+        <![endif]-->
+        <style>
+          body { font-family: 'Cairo', 'Tajawal', Arial, sans-serif; direction: rtl; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11pt; }
+          th, td { border: 1px solid #eedffc; padding: 6px; text-align: center; }
+          th { background-color: #6b21a8; color: #ffffff; font-weight: bold; }
+        </style>
+      </head>
+      <body dir="rtl">
+        ${contentClone.innerHTML}
+      </body>
+    </html>
+  `;
+
+  const blob = new Blob(["﻿", wordHtml], {
+    type: "application/msword",
+  });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `${safeFilename}_${toLocalDateStr(new Date())}.doc`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+}
+
+// يُدرج الترويسة الرسمية كصف إضافي داخل thead الجدول حتى تتكرر تلقائياً أعلى كل
+// صفحة مطبوعة (thead يتكرر أصلاً في كل المتصفحات عند الطباعة) بدل ظهورها أول صفحة فقط
+function buildRepeatingHeaderTableHtml(originalTable, headerHtml) {
+  const tableClone = originalTable.cloneNode(true);
+  const theadClone = tableClone.querySelector("thead");
+  if (!theadClone) return headerHtml + tableClone.outerHTML;
+
+  const headerRow = document.createElement("tr");
+  const headerCell = document.createElement("td");
+  headerCell.colSpan = 30;
+  headerCell.style.border = "none";
+  headerCell.style.padding = "0";
+  headerCell.innerHTML = headerHtml;
+  headerRow.appendChild(headerCell);
+  theadClone.insertBefore(headerRow, theadClone.firstChild);
+
+  return tableClone.outerHTML;
+}
+
+// طباعة رسمية فعلية عبر نافذة طباعة منفصلة (وليست مجرد تنزيل PDF): تُكرَّر الترويسة
+// الرسمية أعلى كل صفحة مطبوعة تلقائياً حتى في التقارير الطويلة متعددة الصفحات
 function printOfficialReport() {
-  downloadReportPDF();
+  const wrapper = document.getElementById("report-results-wrapper");
+  const table = document.getElementById("report-results-table");
+  const tbody = document.getElementById("report-tbody");
+  if (!wrapper || !table || !tbody || !tbody.innerHTML.trim()) {
+    alert("⚠️ يرجى استخراج التقرير أولاً قبل الطباعة!");
+    return;
+  }
+
+  const reportTitle =
+    document.getElementById("print-report-title")?.textContent || "تقرير رسمي";
+  const orientation = getSelectedReportOrientation();
+  const headerEl = wrapper.querySelector(".print-official-header");
+  const chromeHeader = headerEl ? headerEl.outerHTML : "";
+  const footerEl = wrapper.querySelector(".print-official-footer");
+  const chromeFooter = footerEl ? footerEl.outerHTML : "";
+
+  const printableHtml =
+    buildRepeatingHeaderTableHtml(table, chromeHeader) + chromeFooter;
+
+  const printWindow = window.open("", "_blank");
+  printWindow.document.write(`
+    <html dir="rtl" lang="ar">
+      <head>
+        <meta charset="utf-8" />
+        <title>${reportTitle}</title>
+        <style>
+          @page {
+            size: A4 ${orientation};
+            margin: 10mm;
+          }
+          body {
+            font-family: 'Cairo', 'Tajawal', sans-serif;
+            direction: rtl;
+            padding: 15px;
+            background: #fff;
+            color: #000;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .print-official-header, .print-official-footer { display: block !important; }
+          table {
+            width: 100%;
+            table-layout: auto;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 10.5px;
+          }
+          th, td {
+            border: 1px solid #eedffc;
+            padding: 6px 4px;
+            text-align: center;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+          }
+          th {
+            background-color: #6b21a8 !important;
+            color: #ffffff !important;
+            font-weight: bold;
+          }
+          .no-print, button {
+            display: none !important;
+          }
+        </style>
+      </head>
+      <body>
+        ${printableHtml}
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+
+  // الطباعة كانت أحياناً لا تُخرج شيئاً لأن نافذة الطباعة تُستدعى قبل اكتمال تحميل
+  // شعار الترويسة (خصوصاً بعد تكراره بعدة صفحات) - ننتظر تحميله فعلياً بدل مهلة
+  // ثابتة قصيرة، مع مهلة أمان قصوى حتى لا تتعلّق الطباعة لو تعذّر تحميل الشعار لسبب ما
+  let printTriggered = false;
+  const triggerPrint = () => {
+    if (printTriggered) return;
+    printTriggered = true;
+    printWindow.print();
+    printWindow.close();
+  };
+
+  const pendingImgs = Array.from(printWindow.document.images || []).filter(
+    (img) => !img.complete,
+  );
+  if (pendingImgs.length === 0) {
+    setTimeout(triggerPrint, 250);
+  } else {
+    let loadedCount = 0;
+    const onImgSettled = () => {
+      loadedCount++;
+      if (loadedCount >= pendingImgs.length) setTimeout(triggerPrint, 150);
+    };
+    pendingImgs.forEach((img) => {
+      img.addEventListener("load", onImgSettled);
+      img.addEventListener("error", onImgSettled);
+    });
+    setTimeout(triggerPrint, 2500);
+  }
 }

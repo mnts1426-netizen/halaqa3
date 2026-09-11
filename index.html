@@ -29,6 +29,15 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+    <!-- إعدادات تثبيت التطبيق (PWA) -->
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#6b21a8" />
+    <link rel="apple-touch-icon" href="logo12.jpeg" />
+    <!-- مكتبة إشعارات Push الفورية (OneSignal) -->
+    <script
+      src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
+      defer
+    ></script>
     <!-- ملف التنسيقات -->
     <link rel="stylesheet" href="style.css" />
   </head>
@@ -186,6 +195,31 @@
               <p id="sidebar-mosque-name">جامع الهدى</p>
             </div>
           </div>
+        </div>
+
+        <div
+          id="pwa-install-notify-bar"
+          style="padding: 0.75rem 1rem 0.25rem 1rem; flex-direction: column"
+        >
+          <button
+            type="button"
+            class="btn btn-primary btn-block btn-sm js-install-notify-btn"
+            id="btn-install-notify"
+            onclick="handleInstallAndEnableNotifications()"
+            title="تثبيت التطبيق على الجهاز وتفعيل الإشعارات الفورية بضغطة واحدة"
+          >
+            📲 تثبيت التطبيق + تفعيل الإشعارات
+          </button>
+          <small
+            class="text-muted js-install-notify-status"
+            id="install-notify-status"
+            style="
+              display: block;
+              text-align: center;
+              margin-top: 4px;
+              font-size: 0.72rem;
+            "
+          ></small>
         </div>
 
         <nav class="sidebar-nav">
@@ -420,7 +454,15 @@
         </nav>
 
         <div class="sidebar-user-card">
-          <div class="user-avatar" id="current-user-avatar">م</div>
+          <div
+            class="user-avatar"
+            id="current-user-avatar"
+            onclick="openModalEditMyProfile()"
+            title="تعديل بياناتي الشخصية (كلمة المرور والصورة)"
+            style="cursor: pointer"
+          >
+            م
+          </div>
           <div class="user-info">
             <h4 id="current-user-name">المديرة</h4>
             <span id="current-user-role">المديرة</span>
@@ -446,8 +488,61 @@
 
         <!-- 1. لوحة التحكم -->
         <section id="view-dashboard" class="content-view active">
+          <!-- شريط اختيار التاريخ لاستعراض أي يوم سابق في لوحة النظام -->
+          <div
+            class="flex-between mb-3 no-print"
+            style="
+              flex-wrap: wrap;
+              gap: 0.8rem;
+              background: #ffffff;
+              padding: 0.75rem 1rem;
+              border-radius: 8px;
+              border: 1px solid var(--border-color);
+            "
+          >
+            <div class="flex-align-gap">
+              <span
+                style="
+                  font-weight: 800;
+                  color: var(--primary-brown);
+                  font-size: 0.95rem;
+                "
+                >📅 استعراض إحصائيات يوم:</span
+              >
+              <input
+                type="date"
+                id="dashboard-date-select"
+                class="form-control select-input"
+                style="width: auto; font-weight: 700"
+                onchange="
+                  if (typeof renderDashboardView === 'function')
+                    renderDashboardView();
+                "
+              />
+            </div>
+            <div>
+              <button
+                type="button"
+                class="btn btn-outline-brown btn-sm"
+                onclick="
+                  document.getElementById('dashboard-date-select').value =
+                    new Date().toISOString().split('T')[0];
+                  if (typeof renderDashboardView === 'function')
+                    renderDashboardView();
+                "
+              >
+                اليوم الحالي
+              </button>
+            </div>
+          </div>
+
           <div class="stats-grid" id="dashboard-stats-grid">
-            <div class="stat-card">
+            <div
+              class="stat-card"
+              style="cursor: pointer"
+              onclick="openDashboardDetailsModal('students')"
+              title="انقري لعرض قائمة الطالبات وطباعتها"
+            >
               <div class="stat-icon icon-brown">
                 <svg
                   width="24"
@@ -465,7 +560,12 @@
                 <h3 class="stat-value" id="val-stat-1">0</h3>
               </div>
             </div>
-            <div class="stat-card">
+            <div
+              class="stat-card"
+              style="cursor: pointer"
+              onclick="openDashboardDetailsModal('teachers')"
+              title="انقري لعرض قائمة المعلمات ومواعيد دخولهن وطباعتها"
+            >
               <div class="stat-icon icon-brown">
                 <svg
                   width="24"
@@ -484,7 +584,12 @@
                 <h3 class="stat-value" id="val-stat-2">0</h3>
               </div>
             </div>
-            <div class="stat-card">
+            <div
+              class="stat-card"
+              style="cursor: pointer"
+              onclick="openDashboardDetailsModal('circles')"
+              title="انقري لعرض قائمة الحلقات وطباعتها"
+            >
               <div class="stat-icon icon-red-soft">
                 <svg
                   width="24"
@@ -505,7 +610,12 @@
                 <h3 class="stat-value" id="val-stat-3">0</h3>
               </div>
             </div>
-            <div class="stat-card">
+            <div
+              class="stat-card"
+              style="cursor: pointer"
+              onclick="openDashboardDetailsModal('present')"
+              title="انقري لعرض قائمة الحاضرات وطباعتها"
+            >
               <div class="stat-icon icon-green">
                 <svg
                   width="24"
@@ -581,6 +691,36 @@
                   >لم يُسمّعن اليوم</span
                 >
                 <h3 class="stat-value" id="val-stat-not-recited-today">0</h3>
+              </div>
+            </div>
+
+            <!-- المربع 7: متابعة الطالبات لليوم (موحد تماماً بنفس شكل باقي البطاقات) -->
+            <div
+              class="stat-card nav-admin-only"
+              style="cursor: pointer"
+              onclick="openStudentsFollowupModal()"
+              title="انقري لعرض جدول متابعة حضور وتسميع الطالبات وطباعته"
+            >
+              <div class="stat-icon icon-brown">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M9 11l3 3L22 4" />
+                  <path
+                    d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
+                  />
+                </svg>
+              </div>
+              <div class="stat-details">
+                <span class="stat-label">متابعة الطالبات</span>
+                <h3 class="stat-value" style="font-size: 1.25rem">
+                  عرض الكشف 📋
+                </h3>
               </div>
             </div>
           </div>
@@ -880,6 +1020,13 @@
                   />
                 </div>
                 <div class="flex-align-gap">
+                  <button
+                    class="btn btn-success btn-sm"
+                    onclick="markAllTeachersPresent()"
+                    title="تسجيل حضور المديرة وجميع المعلمات دفعة واحدة لهذا اليوم"
+                  >
+                    ✅ تحضير الجميع
+                  </button>
                   <button
                     class="btn btn-outline-brown btn-sm"
                     onclick="exportTeachersAttendanceExcel()"
@@ -1345,6 +1492,13 @@
               </div>
               <div class="flex-align-gap">
                 <button
+                  class="btn btn-primary btn-sm"
+                  id="btn-screen-fullscreen"
+                  onclick="toggleScreenFullscreen()"
+                >
+                  🖥️ ملء الشاشة
+                </button>
+                <button
                   class="btn btn-outline-brown btn-sm"
                   onclick="resetScreenStudentOrder()"
                 >
@@ -1373,6 +1527,7 @@
                 <thead>
                   <tr>
                     <th style="width: 70px; text-align: center">المركز</th>
+                    <th style="width: 70px; text-align: center">🏆 الكأس</th>
                     <th>اسم الطالبة المتميزة</th>
                     <th>الحلقة</th>
                     <th>الحالة</th>
@@ -1463,11 +1618,18 @@
                   class="form-control"
                   onchange="handleReportTypeChange()"
                 >
-                  <option value="student_achievement">تقرير إنجاز طالبة</option>
+                  <option value="curriculum_start_end">
+                    تقرير بداية ونهاية المنهج
+                  </option>
+                  <option value="circle_daily">
+                    تقرير إنجاز طالبات الحلقة اليومي
+                  </option>
+                  <option value="student_daily">
+                    تقرير إنجاز طالبة محددة
+                  </option>
                   <option value="students">
                     التقرير الإحصائي الشامل للطالبات
                   </option>
-                  <option value="tasmeea">تقرير إنجاز التسميع</option>
                   <option value="tamayuz">
                     تقرير التميز الأسبوعي (عدد البطاقات)
                   </option>
@@ -1499,7 +1661,29 @@
                 <input type="date" id="report-date-to" class="form-control" />
               </div>
             </div>
-            <div class="mt-3 flex-align-gap">
+            <div class="flex-align-gap mt-2" style="flex-wrap: wrap">
+              <span style="font-weight: 700; font-size: 0.85rem"
+                >اتجاه الصفحة عند الطباعة/PDF:</span
+              >
+              <label style="display: flex; align-items: center; gap: 4px">
+                <input
+                  type="radio"
+                  name="report-orientation"
+                  id="report-orientation-landscape"
+                  checked
+                />
+                <span>عرضي</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 4px">
+                <input
+                  type="radio"
+                  name="report-orientation"
+                  id="report-orientation-portrait"
+                />
+                <span>طولي</span>
+              </label>
+            </div>
+            <div class="mt-3 flex-align-gap" style="flex-wrap: wrap">
               <button class="btn btn-primary" onclick="generateReport()">
                 🔍 استخراج التقرير
               </button>
@@ -1515,39 +1699,31 @@
               >
                 📄 تنزيل PDF
               </button>
+              <button
+                class="btn btn-outline-brown"
+                onclick="downloadReportWord()"
+              >
+                📝 تنزيل Word
+              </button>
+              <button
+                class="btn btn-outline-brown"
+                onclick="printOfficialReport()"
+              >
+                🖨️ طباعة
+              </button>
             </div>
           </div>
 
           <div class="card mt-3" id="report-results-wrapper">
-            <div class="print-official-header">
-              <div class="print-header-center-logos">
-                <img id="print-logo-new" src="logo12.jpeg" alt="شعار الدار" />
-              </div>
-              <div class="print-header-title-box">
-                <h3
-                  id="print-report-title"
-                  style="
-                    margin: 0;
-                    font-size: 1.15rem;
-                    font-weight: 800;
-                    color: var(--primary-brown);
-                  "
-                >
-                  تقرير رسمي
-                </h3>
-                <p
-                  id="print-report-period"
-                  style="
-                    margin: 3px 0 0 0;
-                    font-size: 0.88rem;
-                    color: #333;
-                    font-weight: 700;
-                  "
-                >
-                  كامل الفترة المسجلة
-                </p>
-              </div>
+            <!-- عنصرا نص مخفيان يحملان عنوان/فترة التقرير الحاليين كما تحددهما دالة
+                 generateReport لكل نوع تقرير - يُستخدَمان كمصدر نصي فقط لبناء الترويسة
+                 الرسمية الكاملة أدناه ولاسم الملف عند التصدير، وليسا معروضين مباشرة -->
+            <div style="display: none">
+              <span id="print-report-title">تقرير رسمي</span>
+              <span id="print-report-period">كامل الفترة المسجلة</span>
             </div>
+
+            <div class="print-official-header" id="report-print-header"></div>
 
             <div class="table-responsive">
               <table class="data-table" id="report-results-table">
@@ -1561,23 +1737,373 @@
                 </tbody>
               </table>
             </div>
+
+            <div class="print-official-footer" id="report-print-footer"></div>
           </div>
         </section>
 
         <!-- 10. شاشة التقارير المالية -->
         <section id="view-finance" class="content-view">
-          <div class="card">
-            <div class="card-header flex-between">
-              <h3
-                style="color: var(--primary-brown); font-weight: 800; margin: 0"
+          <div class="flex-between mb-3">
+            <div class="sub-tabs-bar" style="margin-bottom: 0; border: none">
+              <button
+                class="tab-btn active"
+                id="tab-btn-finance-reports"
+                onclick="switchFinanceSubTab('reports')"
               >
-                💼 التقارير المالية والمصروفات
-              </h3>
+                💼 التقارير المالية
+              </button>
+              <button
+                class="tab-btn"
+                id="tab-btn-finance-payroll"
+                onclick="switchFinanceSubTab('payroll')"
+              >
+                🧾 مسير الرواتب
+              </button>
             </div>
-            <div class="empty-state-card p-4 text-center">
-              <p class="text-muted">
-                قسم التقارير المالية قيد الإعداد والتجهيز...
-              </p>
+          </div>
+
+          <!-- أ. التقارير المالية (إيرادات / مصروفات / الباقي) -->
+          <div id="box-finance-reports">
+            <div class="student-stats-report-grid mb-3">
+              <div
+                class="stat-card"
+                style="
+                  padding: 0.9rem;
+                  text-align: center;
+                  flex-direction: column;
+                  justify-content: center;
+                "
+              >
+                <span class="stat-label">إجمالي الإيرادات</span>
+                <h3
+                  class="stat-value"
+                  id="finance-total-revenue"
+                  style="color: #2e7d32"
+                >
+                  0
+                </h3>
+              </div>
+              <div
+                class="stat-card"
+                style="
+                  padding: 0.9rem;
+                  text-align: center;
+                  flex-direction: column;
+                  justify-content: center;
+                "
+              >
+                <span class="stat-label">إجمالي المصروفات</span>
+                <h3
+                  class="stat-value"
+                  id="finance-total-expense"
+                  style="color: #c62828"
+                >
+                  0
+                </h3>
+              </div>
+              <div
+                class="stat-card"
+                style="
+                  padding: 0.9rem;
+                  text-align: center;
+                  flex-direction: column;
+                  justify-content: center;
+                "
+              >
+                <span class="stat-label">الباقي بعد الخصم</span>
+                <h3
+                  class="stat-value"
+                  id="finance-net-balance"
+                  style="color: var(--primary-brown)"
+                >
+                  0
+                </h3>
+              </div>
+            </div>
+
+            <div class="card mb-3 nav-admin-only" id="finance-add-forms-card">
+              <div
+                class="card-body"
+                style="
+                  display: grid;
+                  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                  gap: 1rem;
+                "
+              >
+                <form onsubmit="handleAddFinanceRevenue(event)">
+                  <h4
+                    style="
+                      color: #2e7d32;
+                      font-weight: 800;
+                      margin-bottom: 0.6rem;
+                    "
+                  >
+                    ➕ إضافة إيراد
+                  </h4>
+                  <div class="form-row">
+                    <div class="form-group flex-1">
+                      <label>المبلغ (ريال)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        class="form-control"
+                        name="amount"
+                        required
+                      />
+                    </div>
+                    <div class="form-group flex-1">
+                      <label>التاريخ</label>
+                      <input
+                        type="date"
+                        class="form-control"
+                        name="date"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label>المصدر / الوصف</label>
+                    <input
+                      type="text"
+                      class="form-control"
+                      name="source"
+                      placeholder="مثال: تبرع، رسوم..."
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    class="btn btn-success btn-sm btn-block"
+                  >
+                    حفظ الإيراد
+                  </button>
+                </form>
+
+                <form onsubmit="handleAddFinanceExpense(event)">
+                  <h4
+                    style="
+                      color: #c62828;
+                      font-weight: 800;
+                      margin-bottom: 0.6rem;
+                    "
+                  >
+                    ➖ إضافة مصروف
+                  </h4>
+                  <div class="form-row">
+                    <div class="form-group flex-1">
+                      <label>الصنف</label>
+                      <input
+                        type="text"
+                        class="form-control"
+                        name="category"
+                        placeholder="مثال: صيانة، مستلزمات..."
+                        required
+                      />
+                    </div>
+                    <div class="form-group flex-1">
+                      <label>المبلغ (ريال)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        class="form-control"
+                        name="amount"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group flex-1">
+                      <label>التاريخ</label>
+                      <input
+                        type="date"
+                        class="form-control"
+                        name="date"
+                        required
+                      />
+                    </div>
+                    <div class="form-group flex-1">
+                      <label>ملاحظة (اختياري)</label>
+                      <input type="text" class="form-control" name="notes" />
+                    </div>
+                  </div>
+                  <button type="submit" class="btn btn-danger btn-sm btn-block">
+                    حفظ المصروف
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            <div class="card mb-3">
+              <div class="card-header flex-between">
+                <h3 style="color: #2e7d32; font-weight: 800; margin: 0">
+                  سجل الإيرادات
+                </h3>
+                <div class="flex-align-gap">
+                  <button
+                    class="btn btn-outline-brown btn-sm"
+                    onclick="
+                      printTableElement(
+                        'finance-revenues-table',
+                        'سجل الإيرادات',
+                      )
+                    "
+                  >
+                    🖨️ طباعة
+                  </button>
+                  <button
+                    class="btn btn-outline-brown btn-sm"
+                    onclick="
+                      directDownloadPDF(
+                        'finance-revenues-table',
+                        'سجل_الإيرادات',
+                        'سجل الإيرادات',
+                      )
+                    "
+                  >
+                    📄 PDF
+                  </button>
+                  <button
+                    class="btn btn-outline-brown btn-sm"
+                    onclick="exportFinanceRevenuesExcel()"
+                  >
+                    📤 Excel
+                  </button>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table" id="finance-revenues-table">
+                  <thead>
+                    <tr>
+                      <th>التاريخ</th>
+                      <th>المصدر / الوصف</th>
+                      <th>المبلغ</th>
+                      <th class="nav-admin-only">—</th>
+                    </tr>
+                  </thead>
+                  <tbody id="finance-revenues-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card mb-3">
+              <div class="card-header flex-between">
+                <h3 style="color: #c62828; font-weight: 800; margin: 0">
+                  سجل المصروفات
+                </h3>
+                <div class="flex-align-gap">
+                  <button
+                    class="btn btn-outline-brown btn-sm"
+                    onclick="
+                      printTableElement(
+                        'finance-expenses-table',
+                        'سجل المصروفات',
+                      )
+                    "
+                  >
+                    🖨️ طباعة
+                  </button>
+                  <button
+                    class="btn btn-outline-brown btn-sm"
+                    onclick="
+                      directDownloadPDF(
+                        'finance-expenses-table',
+                        'سجل_المصروفات',
+                        'سجل المصروفات',
+                      )
+                    "
+                  >
+                    📄 PDF
+                  </button>
+                  <button
+                    class="btn btn-outline-brown btn-sm"
+                    onclick="exportFinanceExpensesExcel()"
+                  >
+                    📤 Excel
+                  </button>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table" id="finance-expenses-table">
+                  <thead>
+                    <tr>
+                      <th>التاريخ</th>
+                      <th>الصنف</th>
+                      <th>ملاحظة</th>
+                      <th>المبلغ</th>
+                      <th class="nav-admin-only">—</th>
+                    </tr>
+                  </thead>
+                  <tbody id="finance-expenses-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- ب. مسير الرواتب -->
+          <div id="box-finance-payroll" class="style-hidden">
+            <div class="card mb-3">
+              <div
+                class="card-header flex-between"
+                style="flex-wrap: wrap; gap: 0.6rem"
+              >
+                <div class="flex-align-gap">
+                  <label style="font-weight: 700; margin-inline-end: 0.4rem"
+                    >الشهر:</label
+                  >
+                  <input
+                    type="month"
+                    class="form-control"
+                    id="payroll-month-select"
+                    style="width: auto"
+                    onchange="renderPayrollTable()"
+                  />
+                </div>
+                <div class="flex-align-gap">
+                  <button
+                    class="btn btn-outline-brown btn-sm"
+                    onclick="printTableElement('payroll-table', 'مسير الرواتب')"
+                  >
+                    🖨️ طباعة
+                  </button>
+                  <button
+                    class="btn btn-outline-brown btn-sm"
+                    onclick="
+                      directDownloadPDF(
+                        'payroll-table',
+                        'مسير_الرواتب',
+                        'مسير الرواتب',
+                      )
+                    "
+                  >
+                    📄 PDF
+                  </button>
+                  <button
+                    class="btn btn-outline-brown btn-sm"
+                    onclick="exportPayrollExcel()"
+                  >
+                    📤 Excel
+                  </button>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table" id="payroll-table">
+                  <thead>
+                    <tr>
+                      <th>المعلمة</th>
+                      <th>المكافأة الأساسية (شهرياً)</th>
+                      <th>اليومية</th>
+                      <th>أيام الحضور</th>
+                      <th>أيام الغياب</th>
+                      <th>أيام الاستئذان</th>
+                      <th>الزيادة</th>
+                      <th>الإجمالي المستحق</th>
+                    </tr>
+                  </thead>
+                  <tbody id="payroll-tbody"></tbody>
+                </table>
+              </div>
             </div>
           </div>
         </section>
@@ -1795,6 +2321,162 @@
     </div>
 
     <!-- MODALS: النوافذ المنبثقة -->
+
+    <!-- نافذة متابعة الطالبات لليوم (موسعة كصفحة مستقلة وشاشة كاملة مع زر خروج وإغلاق بارز) -->
+    <div
+      id="modal-students-followup"
+      class="modal-overlay modal-fullscreen-overlay"
+    >
+      <div class="modal-card modal-fullscreen">
+        <div class="modal-header flex-between">
+          <div class="flex-align-gap">
+            <span style="font-size: 1.4rem">📋</span>
+            <h3
+              id="students-followup-modal-title"
+              style="margin: 0; font-size: 1.25rem"
+            >
+              متابعة الطالبات لليوم
+            </h3>
+          </div>
+          <div class="flex-align-gap">
+            <button
+              type="button"
+              class="btn btn-outline-brown btn-sm no-print"
+              onclick="closeModal('modal-students-followup')"
+              style="padding: 0.35rem 0.95rem; font-weight: 800"
+            >
+              🚪 خروج للوحة النظام
+            </button>
+            <button
+              class="modal-close"
+              onclick="closeModal('modal-students-followup')"
+              title="إغلاق والعودة للوحة النظام"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div
+            class="flex-between mb-3 no-print"
+            style="flex-wrap: wrap; gap: 0.8rem"
+          >
+            <input
+              type="text"
+              id="search-modal-students-followup"
+              class="form-control search-input"
+              style="max-width: 320px"
+              placeholder="🔍 ابحثي باسم الطالبة..."
+              oninput="filterStudentsFollowupModal()"
+            />
+            <div class="flex-align-gap">
+              <button
+                class="btn btn-outline-brown btn-sm"
+                onclick="exportStudentsFollowupExcel()"
+              >
+                📤 تصدير Excel
+              </button>
+              <button
+                class="btn btn-outline-brown btn-sm"
+                onclick="printStudentsFollowup()"
+              >
+                🖨️ طباعة
+              </button>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="students-followup-table-element">
+              <thead>
+                <tr>
+                  <th style="width: 45px; text-align: center">م</th>
+                  <th>اسم الطالبة</th>
+                  <th style="text-align: center">الحلقة</th>
+                  <th style="text-align: center">الحضور</th>
+                  <th style="text-align: center">الدرس</th>
+                  <th style="text-align: center">المراجعة</th>
+                  <th style="text-align: center">التلاوة</th>
+                </tr>
+              </thead>
+              <tbody id="students-followup-tbody">
+                <tr>
+                  <td colspan="6" class="text-center text-muted p-3">
+                    جاري التحميل...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-outline-brown"
+            onclick="closeModal('modal-students-followup')"
+          >
+            إغلاق
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- نافذة تفاصيل إحصائيات لوحة النظام والطباعة -->
+    <div id="modal-dashboard-details" class="modal-overlay">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h3 id="dashboard-details-modal-title">تفاصيل الإحصائية</h3>
+          <button
+            class="modal-close"
+            onclick="closeModal('modal-dashboard-details')"
+          >
+            &times;
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="flex-between mb-2 no-print">
+            <input
+              type="text"
+              id="search-modal-dashboard-details"
+              class="form-control search-input"
+              placeholder="🔍 ابحثي في القائمة..."
+              oninput="filterDashboardDetailsModal()"
+            />
+            <div class="flex-align-gap">
+              <button
+                class="btn btn-outline-brown btn-sm"
+                onclick="exportDashboardDetailsExcel()"
+              >
+                📤 تصدير Excel
+              </button>
+              <button
+                class="btn btn-outline-brown btn-sm"
+                onclick="printDashboardDetails()"
+              >
+                🖨️ طباعة
+              </button>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="dashboard-details-table-element">
+              <thead id="dashboard-details-thead"></thead>
+              <tbody id="dashboard-details-tbody">
+                <tr>
+                  <td class="text-center text-muted p-3">جاري التحميل...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-outline-brown"
+            onclick="closeModal('modal-dashboard-details')"
+          >
+            إغلاق
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- نافذة الخريطة التفاعلية -->
     <div id="modal-map-picker" class="modal-overlay">
@@ -2558,6 +3240,63 @@
           <input type="hidden" id="edit-account-user-id" value="" />
           <div class="modal-body">
             <div class="form-group">
+              <label>صورة الحساب</label>
+              <div style="display: flex; align-items: center; gap: 1rem">
+                <div
+                  id="edit-account-photo-circle"
+                  style="
+                    width: 64px;
+                    height: 64px;
+                    border-radius: 50%;
+                    overflow: hidden;
+                    background: linear-gradient(
+                      135deg,
+                      var(--accent-gold) 0%,
+                      var(--accent-plum) 100%
+                    );
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: #fff;
+                    font-weight: 900;
+                    font-size: 1.5rem;
+                    flex-shrink: 0;
+                  "
+                >
+                  <span id="edit-account-photo-letter">أ</span>
+                  <img
+                    id="edit-account-photo-preview"
+                    src=""
+                    alt="صورة الحساب"
+                    style="
+                      display: none;
+                      width: 100%;
+                      height: 100%;
+                      object-fit: cover;
+                    "
+                  />
+                </div>
+                <div style="flex: 1">
+                  <input
+                    type="file"
+                    id="edit-account-photo-file"
+                    accept="image/*"
+                    class="form-control"
+                    onchange="previewAccountPhotoFile(event)"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-outline-brown btn-sm mt-1"
+                    id="btn-remove-account-photo"
+                    onclick="removeAccountPhoto()"
+                    style="display: none"
+                  >
+                    🗑️ إزالة الصورة (الرجوع للحرف الافتراضي)
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
               <label>الاسم الكامل</label
               ><input
                 type="text"
@@ -3205,6 +3944,103 @@
       </div>
     </div>
 
+    <!-- 14. نافذة تعديل بياناتي الشخصية (كلمة المرور والصورة) -->
+    <div id="modal-edit-my-profile" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>تعديل بياناتي الشخصية</h3>
+          <button
+            class="modal-close"
+            onclick="closeModal('modal-edit-my-profile')"
+          >
+            &times;
+          </button>
+        </div>
+        <form id="form-edit-my-profile" onsubmit="handleSaveMyProfile(event)">
+          <div class="modal-body">
+            <div class="form-group">
+              <label>صورة الحساب</label>
+              <div style="display: flex; align-items: center; gap: 1rem">
+                <div
+                  id="my-profile-photo-circle"
+                  style="
+                    width: 64px;
+                    height: 64px;
+                    border-radius: 50%;
+                    overflow: hidden;
+                    background: linear-gradient(
+                      135deg,
+                      var(--accent-gold) 0%,
+                      var(--accent-plum) 100%
+                    );
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: #fff;
+                    font-weight: 900;
+                    font-size: 1.5rem;
+                    flex-shrink: 0;
+                  "
+                >
+                  <span id="my-profile-photo-letter">أ</span>
+                  <img
+                    id="my-profile-photo-preview"
+                    src=""
+                    alt="صورة الحساب"
+                    style="
+                      display: none;
+                      width: 100%;
+                      height: 100%;
+                      object-fit: cover;
+                    "
+                  />
+                </div>
+                <div style="flex: 1">
+                  <input
+                    type="file"
+                    id="my-profile-photo-file"
+                    accept="image/*"
+                    class="form-control"
+                    onchange="previewMyProfilePhotoFile(event)"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-outline-brown btn-sm mt-1"
+                    id="btn-remove-my-profile-photo"
+                    onclick="removeMyProfilePhoto()"
+                    style="display: none"
+                  >
+                    🗑️ إزالة الصورة (الرجوع للحرف الافتراضي)
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label style="color: var(--primary-brown); font-weight: 800"
+                >كلمة المرور الجديدة</label
+              >
+              <input
+                type="text"
+                id="my-profile-password"
+                class="form-control"
+                placeholder="اتركيه فارغاً إن لم ترغبي بتغييره"
+              />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">حفظ التعديلات</button
+            ><button
+              type="button"
+              class="btn btn-outline-brown"
+              onclick="closeModal('modal-edit-my-profile')"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- ملفات النظام البرمجية -->
     <script src="config.js"></script>
     <script src="firebase.js"></script>
@@ -3212,5 +4048,6 @@
     <script src="admin.js"></script>
     <script src="reports.js"></script>
     <script src="app.js"></script>
+    <script src="pwa-notifications.js"></script>
   </body>
 </html>

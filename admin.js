@@ -17,6 +17,7 @@ window.appStore = window.appStore || {
   tasmeea: [],
   screenOrder: [],
   notifications: [],
+  teacherLogs: [],
   settings: null,
 };
 
@@ -112,8 +113,1024 @@ document.addEventListener("DOMContentLoaded", () => {
   const attSearchStudent = document.getElementById("search-attendance-student");
   if (attSearchStudent) attSearchStudent.oninput = renderAttendanceTable;
 
+  const dashDateSelect = document.getElementById("dashboard-date-select");
+  if (dashDateSelect) {
+    if (!dashDateSelect.value) {
+      dashDateSelect.value = new Date().toISOString().split("T")[0];
+    }
+    dashDateSelect.onchange = () => {
+      if (typeof renderDashboardView === "function") renderDashboardView();
+    };
+  }
+
   renderExcelColumnMappingInputs();
+  ensureTeacherLogsContainer();
+  renderTeacherLogsTable();
 });
+
+// أيام الدوام الرسمية للدار (الأحد إلى الأربعاء)
+window.isOfficialWorkday = function (dateStr) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr + "T00:00:00");
+  const day = d.getDay();
+  return day >= 0 && day <= 3;
+};
+
+// التأكد من توفر بطاقة سجل العمليات وبنائها برمجياً دون الحاجة لتعديل index.html
+// (سجل العمليات خاص بالمديرة فقط - لا يُنشأ إطلاقاً لغيرها)
+function ensureTeacherLogsContainer() {
+  if (!window.currentUser || window.currentUser.role !== "admin") return;
+  if (document.getElementById("teacher-logs-card")) return;
+
+  const dashboardView = document.getElementById("view-dashboard");
+  if (!dashboardView) return;
+
+  const logsCard = document.createElement("div");
+  logsCard.id = "teacher-logs-card";
+  logsCard.className = "card mb-3 nav-admin-only";
+  logsCard.style.marginTop = "1rem";
+  logsCard.innerHTML = `
+    <div class="card-header flex-between">
+      <div>
+        <h3 style="color: var(--primary-brown); font-weight: 800; margin: 0;">
+          📜 سجل متابعة آخر 50 عملية للمعلمات
+        </h3>
+        <small class="text-muted">متابعة فورية لدخول المعلمات ورصد المقررات والتحضير مع إمكانية التصفية بالأيام</small>
+      </div>
+      <div class="flex-align-gap no-print">
+        <button class="btn btn-outline-brown btn-sm" onclick="exportTeacherLogsExcel()">📤 تصدير Excel</button>
+        <button class="btn btn-outline-brown btn-sm" onclick="exportTeacherLogsPDF()">📄 تنزيل PDF</button>
+        <button class="btn btn-outline-brown btn-sm" onclick="printTeacherLogs()">🖨️ طباعة</button>
+      </div>
+    </div>
+    <div class="card-filter-bar no-print flex-between" style="flex-wrap: wrap; gap: 0.8rem;">
+      <div style="display: flex; gap: 0.8rem; flex: 1; flex-wrap: wrap;">
+        <input type="date" id="filter-teacher-logs-date" class="form-control select-input" onchange="renderTeacherLogsTable()" title="فلترة العمليات بتاريخ محدد" />
+        <input type="text" id="search-teacher-logs" class="form-control search-input" placeholder="🔍 ابحثي باسم المعلمة، نوع العملية، أو اسم الطالبة..." oninput="renderTeacherLogsTable()" />
+      </div>
+      <div>
+        <button type="button" class="btn btn-outline-brown btn-sm" onclick="document.getElementById('filter-teacher-logs-date').value = ''; renderTeacherLogsTable();">
+          عرض كل الأيام
+        </button>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="data-table" id="teacher-logs-table-element">
+        <thead>
+          <tr>
+            <th style="width: 45px; text-align: center;">م</th>
+            <th style="width: 145px; text-align: center;">التاريخ والوقت</th>
+            <th>اسم المعلمة</th>
+            <th>نوع الإجراء</th>
+            <th>الحلقة</th>
+            <th>تفاصيل العملية</th>
+          </tr>
+        </thead>
+        <tbody id="teacher-logs-table-body">
+          <tr><td colspan="6" class="text-center text-muted p-3">جاري تحميل سجل العمليات...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  dashboardView.appendChild(logsCard);
+}
+
+// عرض وتصفية آخر 50 عملية للمعلمات (خاص بالمديرة فقط)
+window.renderTeacherLogsTable = function () {
+  if (!window.currentUser || window.currentUser.role !== "admin") return;
+  ensureTeacherLogsContainer();
+  const tbody = document.getElementById("teacher-logs-table-body");
+  if (!tbody) return;
+
+  const searchVal = (
+    document.getElementById("search-teacher-logs")?.value || ""
+  )
+    .trim()
+    .toLowerCase();
+  const filterDate =
+    document.getElementById("filter-teacher-logs-date")?.value || "";
+
+  let logs = window.appStore?.teacherLogs || [];
+  logs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+  let filtered = logs.filter((log) => {
+    const matchSearch =
+      !searchVal ||
+      (log.teacherName && log.teacherName.toLowerCase().includes(searchVal)) ||
+      (log.action && log.action.toLowerCase().includes(searchVal)) ||
+      (log.details && log.details.toLowerCase().includes(searchVal)) ||
+      (log.circleName && log.circleName.toLowerCase().includes(searchVal));
+
+    const matchDate = !filterDate || log.date === filterDate;
+    return matchSearch && matchDate;
+  });
+
+  const latest50 = filtered.slice(0, 50);
+
+  if (latest50.length === 0) {
+    tbody.innerHTML =
+      '<tr><td colspan="6" class="text-center text-muted p-4">لا توجد عمليات مسجلة للمعلمات في هذا التاريخ</td></tr>';
+    return;
+  }
+
+  let html = "";
+  latest50.forEach((item, idx) => {
+    html += `
+      <tr>
+        <td style="text-align: center;">${idx + 1}</td>
+        <td dir="ltr" style="text-align: center; font-size: 0.85rem; font-weight: 700;">${item.date} (${item.time})</td>
+        <td style="font-weight: 700; color: var(--primary-brown);">${item.teacherName}</td>
+        <td><span class="badge badge-active">${item.action}</span></td>
+        <td><span style="font-weight: 600;">${item.circleName || "—"}</span></td>
+        <td style="text-align: right; font-size: 0.88rem; line-height: 1.4;">${item.details}</td>
+      </tr>
+    `;
+  });
+  tbody.innerHTML = html;
+};
+
+window.printTeacherLogs = function () {
+  printTableElement("teacher-logs-table-element", "سجل آخر 50 عملية للمعلمات");
+};
+
+window.exportTeacherLogsExcel = function () {
+  const table = document.getElementById("teacher-logs-table-element");
+  if (!table) return;
+  if (typeof XLSX === "undefined") {
+    alert("⚠️ مكتبة Excel غير متوفرة!");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "عمليات_المعلمات" });
+  XLSX.writeFile(
+    wb,
+    `سجل_عمليات_المعلمات_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
+
+window.exportTeacherLogsPDF = function () {
+  directDownloadPDF(
+    "teacher-logs-table-element",
+    "سجل_عمليات_المعلمات",
+    "سجل آخر 50 عملية للمعلمات",
+  );
+};
+
+// بناء ترويسة وتذييل الطباعة الرسمية الموحّدة (تُستخدم في كل ما يُطبع أو يُصدَّر PDF بالنظام)
+// rightSubText: نص اختياري يظهر تحت الشعار الأيمن (مثال: اسم الحلقة بالتقارير الرسمية)
+// شعارا ترويسة الطباعة الرسمية: report_logo_right.png (أيقونة المسجد/القرآن العامة،
+// نفس تصميم نسخة الإخوة بدون أي نص خاص بهم) و report_logo_left.png (شعار دار
+// المُهتدية النسائية المفرَّغ الخاص بهن).
+window.buildOfficialPrintChrome = function (
+  titleText,
+  rightSubText,
+  centerSubHtml,
+  leftSubText,
+) {
+  const now = new Date();
+  const dateDisplay = now.toLocaleDateString("ar-SA", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const timeDisplay = now.toLocaleTimeString("ar-SA", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const orgName =
+    window.appStore?.settings?.orgName || "دار المُهتدية النسائية";
+  const subTitle = window.appStore?.settings?.subTitle || "جامع الهدى";
+
+  const header = `
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div style="width: 130px; text-align: right;">
+        <img src="report_logo_right.png" alt="شعار الدار" style="height: 70px; width: auto; object-fit: contain;" />
+      </div>
+      <div style="text-align: center; flex: 1;">
+        <h2 style="margin: 3px 0; font-size: 1.35rem; font-weight: 900; color: #6b21a8; font-family: 'Amiri', 'Cairo', serif;">${orgName}</h2>
+        <h4 style="margin: 0; font-size: 0.95rem; font-weight: 800; color: #86198f;">${subTitle}</h4>
+      </div>
+      <div style="width: 130px; text-align: left;">
+        <img src="report_logo_left.png" alt="شعار الدار" style="height: 70px; width: auto; object-fit: contain;" />
+      </div>
+    </div>
+    <div style="height: 2px; width: 100%; margin: 0.5rem 0; background: linear-gradient(90deg, #c084fc, #86198f);"></div>
+    <div style="display: flex; justify-content: center; align-items: center; gap: 1.5rem; border-bottom: 2px double #6b21a8; padding-bottom: 0.7rem; margin-bottom: 1rem;">
+      <div style="text-align: right; min-width: 90px;">
+        ${rightSubText ? `<div style="font-weight:800; color:#7e22ce; font-size:0.8rem; white-space: nowrap;">${rightSubText}</div>` : ""}
+      </div>
+      <div style="text-align: center;">
+        <div style="display: table; max-width: 100%; margin: 0 auto; border: 1.5px solid #c084fc; border-radius: 6px; padding: 0.2rem 0.9rem; background: #faf5ff;">
+          <h3 style="margin: 0; font-size: 0.95rem; font-weight: 900; color: #6b21a8; line-height: 1.3; word-break: break-word;">${titleText}</h3>
+        </div>
+        ${centerSubHtml ? `<div style="margin-top: 4px; font-weight: 800; color: #86198f; font-size: 0.78rem; white-space: nowrap;">${centerSubHtml}</div>` : ""}
+      </div>
+      <div style="text-align: left; min-width: 90px;">
+        ${
+          leftSubText
+            ? `<div style="font-weight:800; color:#86198f; font-size:0.78rem; white-space: nowrap;">${leftSubText}</div>`
+            : `<div style="font-weight:800; color:#86198f; font-size:0.78rem;">${dateDisplay}<br>${timeDisplay}</div>`
+        }
+      </div>
+    </div>
+  `;
+
+  const footer = `
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; border-top: 1.5px solid #e9d5ff; padding-top: 1rem; margin-top: 1.5rem; font-size: 0.9rem;">
+      <div style="text-align: right;">
+        <strong style="color: #6b21a8;">المنصّة الإلكترونيّة لدار المُهتدية النسائية</strong>
+      </div>
+      <div style="text-align: center;">
+        <div style="font-weight: 800; color: #86198f;">مديرة الدار</div>
+        <div style="font-weight: 900; color: #6b21a8;">${window.appStore?.settings?.directorName || "المديرة"}</div>
+      </div>
+    </div>
+  `;
+
+  return { header, footer };
+};
+
+// إدراج الترويسة كصف إضافي داخل thead الجدول حتى تتكرر تلقائياً بأعلى كل صفحة مطبوعة
+// (thead يتكرر أصلاً بكل المتصفحات عند الطباعة، بعكس أي عنصر خارج الجدول)
+window.buildRepeatingHeaderTableHtml = function (originalTable, headerHtml) {
+  const clone = originalTable.cloneNode(true);
+  let thead = clone.querySelector("thead");
+  if (!thead) {
+    thead = document.createElement("thead");
+    clone.insertBefore(thead, clone.firstChild);
+  }
+  const firstRow = thead.querySelector("tr");
+  const colCount = firstRow ? firstRow.children.length : 1;
+
+  const headerRow = document.createElement("tr");
+  const headerCell = document.createElement("td");
+  headerCell.colSpan = colCount;
+  headerCell.style.cssText = "padding: 0; border: none; background: #fff;";
+  headerCell.innerHTML = headerHtml;
+  headerRow.appendChild(headerCell);
+  thead.insertBefore(headerRow, thead.firstChild);
+
+  return clone.outerHTML;
+};
+
+// دوال الطباعة والتصدير العام
+window.printTableElement = function (tableId, title) {
+  const table = document.getElementById(tableId);
+  if (!table) {
+    alert("⚠️ لا يوجد جدول متاح للطباعة.");
+    return;
+  }
+  const chrome =
+    typeof buildOfficialPrintChrome === "function"
+      ? buildOfficialPrintChrome(title, "")
+      : { header: "", footer: "" };
+
+  const tableHtml =
+    typeof buildRepeatingHeaderTableHtml === "function"
+      ? buildRepeatingHeaderTableHtml(table, chrome.header)
+      : chrome.header + table.outerHTML;
+
+  const printWindow = window.open("", "_blank");
+  printWindow.document.write(`
+    <html dir="rtl" lang="ar">
+      <head>
+        <meta charset="utf-8" />
+        <title>${title}</title>
+        <style>
+          @page { size: A4 landscape; margin: 10mm; }
+          body { font-family: 'Cairo', 'Tajawal', sans-serif; direction: rtl; padding: 15px; }
+          table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 15px; font-size: 11px; }
+          th, td { border: 1px solid #eedffc; padding: 5px 4px; text-align: center; word-wrap: break-word; overflow-wrap: break-word; }
+          th { background-color: #6b21a8; color: #ffffff; font-weight: bold; }
+          .no-print, button { display: none !important; }
+        </style>
+      </head>
+      <body>
+        ${tableHtml}
+        ${chrome.footer}
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+    printWindow.close();
+  }, 350);
+};
+
+window.directDownloadPDF = function (elementId, filename, title) {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    alert("⚠️ لا توجد بيانات متاحة للتنزيل!");
+    return;
+  }
+
+  if (typeof html2pdf !== "undefined") {
+    const chrome =
+      typeof buildOfficialPrintChrome === "function"
+        ? buildOfficialPrintChrome(title, "")
+        : { header: "", footer: "" };
+
+    // بناء نسخة مؤقتة خارج الشاشة تحتوي الترويسة والجدول والتذييل معاً قبل تصديرها PDF
+    const isTableElement = element.tagName === "TABLE";
+    const contentHtml =
+      isTableElement && typeof buildRepeatingHeaderTableHtml === "function"
+        ? buildRepeatingHeaderTableHtml(element, chrome.header)
+        : chrome.header + element.outerHTML;
+
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText =
+      "position: fixed; top: -99999px; left: -99999px; background:#fff; padding: 1.5rem; width: 1200px; font-family: 'Cairo','Tajawal',sans-serif;";
+    wrapper.innerHTML = contentHtml + chrome.footer;
+    document.body.appendChild(wrapper);
+
+    const opt = {
+      margin: [8, 8, 8, 8],
+      filename: `${filename}_${new Date().toISOString().split("T")[0]}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: "mm", format: "a4", orientation: "landscape" },
+    };
+    html2pdf()
+      .set(opt)
+      .from(wrapper)
+      .save()
+      .then(() => {
+        document.body.removeChild(wrapper);
+      })
+      .catch(() => {
+        document.body.removeChild(wrapper);
+      });
+  } else {
+    window.printTableElement(elementId, title);
+  }
+};
+
+window.printTeachersTable = function () {
+  printTableElement("teachers-table-element", "قائمة المعلمات المكلفات");
+};
+
+window.printTeachersAttendance = function () {
+  printTableElement(
+    "teachers-attendance-table-element",
+    "كشف متابعة تحضير المعلمات",
+  );
+};
+
+window.printStudentsTable = function () {
+  printTableElement("students-table-element", "كشف الطالبات المسجلات");
+};
+
+window.printAttendanceTable = function () {
+  printTableElement("attendance-table-element", "كشف تحضير الطالبات");
+};
+
+window.printAccountsTable = function () {
+  printTableElement("accounts-table-element", "إدارة حسابات النظام");
+};
+
+window.printTestsTable = function () {
+  printTableElement("tests-table-element", "سجل الاختبارات والنتائج");
+};
+
+window.printTeacherNotes = function () {
+  printTableElement("teacher-notes-table-element", "ملاحظات المعلمات للإدارة");
+};
+
+window.exportTeachersExcel = function () {
+  const table = document.getElementById("teachers-table-element");
+  if (!table) return;
+  if (typeof XLSX === "undefined") {
+    alert("⚠️ مكتبة Excel غير متوفرة!");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "المعلمات" });
+  XLSX.writeFile(
+    wb,
+    `قائمة_المعلمات_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
+
+window.exportTeachersPDF = function () {
+  directDownloadPDF(
+    "teachers-table-element",
+    "قائمة_المعلمات",
+    "قائمة المعلمات المكلفات",
+  );
+};
+
+window.exportTeachersAttendanceExcel = function () {
+  const table = document.getElementById("teachers-attendance-table-element");
+  if (!table) return;
+  if (typeof XLSX === "undefined") {
+    alert("⚠️ مكتبة Excel غير متوفرة!");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "تحضير_المعلمات" });
+  XLSX.writeFile(
+    wb,
+    `تحضير_المعلمات_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
+
+window.exportTeachersAttendancePDF = function () {
+  directDownloadPDF(
+    "teachers-attendance-table-element",
+    "تحضير_المعلمات",
+    "كشف متابعة تحضير المعلمات",
+  );
+};
+
+window.exportStudentsPDF = function () {
+  directDownloadPDF(
+    "students-table-element",
+    "كشف_الطالبات",
+    "كشف الطالبات المسجلات",
+  );
+};
+
+// تصدير الطالبات (زر منفصل ظاهر أعلى الجدول - كان معطلاً بسبب دالة غير معرّفة)
+window.executeBulkExportStudentsExcel = function () {
+  const table = document.getElementById("students-table-element");
+  if (!table) return;
+  if (typeof XLSX === "undefined") {
+    alert("⚠️ مكتبة Excel غير متوفرة!");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "الطالبات" });
+  XLSX.writeFile(
+    wb,
+    `كشف_الطالبات_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
+
+window.exportAttendanceExcel = function () {
+  const table = document.getElementById("attendance-table-element");
+  if (!table) return;
+  if (typeof XLSX === "undefined") {
+    alert("⚠️ مكتبة Excel غير متوفرة!");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "تحضير_الطالبات" });
+  XLSX.writeFile(
+    wb,
+    `تحضير_الطالبات_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
+
+window.exportAttendancePDF = function () {
+  directDownloadPDF(
+    "attendance-table-element",
+    "تحضير_الطالبات",
+    "كشف تحضير الطالبات",
+  );
+};
+
+window.exportAccountsExcel = function () {
+  const table = document.getElementById("accounts-table-element");
+  if (!table) return;
+  if (typeof XLSX === "undefined") {
+    alert("⚠️ مكتبة Excel غير متوفرة!");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "الحسابات" });
+  XLSX.writeFile(
+    wb,
+    `حسابات_النظام_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
+
+window.exportAccountsPDF = function () {
+  directDownloadPDF(
+    "accounts-table-element",
+    "حسابات_النظام",
+    "إدارة حسابات النظام",
+  );
+};
+
+window.exportTestsExcel = function () {
+  const table = document.getElementById("tests-table-element");
+  if (!table) return;
+  if (typeof XLSX === "undefined") {
+    alert("⚠️ مكتبة Excel غير متوفرة!");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "الاختبارات" });
+  XLSX.writeFile(
+    wb,
+    `سجل_الاختبارات_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
+
+window.exportTestsPDF = function () {
+  directDownloadPDF(
+    "tests-table-element",
+    "سجل_الاختبارات",
+    "سجل الاختبارات والنتائج",
+  );
+};
+
+window.exportTeacherNotesExcel = function () {
+  const table = document.getElementById("teacher-notes-table-element");
+  if (!table) return;
+  if (typeof XLSX === "undefined") {
+    alert("⚠️ مكتبة Excel غير متوفرة!");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "ملاحظات_المعلمات" });
+  XLSX.writeFile(
+    wb,
+    `ملاحظات_المعلمات_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
+
+window.exportTeacherNotesPDF = function () {
+  directDownloadPDF(
+    "teacher-notes-table-element",
+    "ملاحظات_المعلمات",
+    "ملاحظات المعلمات للإدارة",
+  );
+};
+
+// نافذة متابعة الطالبات لليوم
+window.openStudentsFollowupModal = function () {
+  const titleEl = document.getElementById("students-followup-modal-title");
+  const thead = document.querySelector(
+    "#students-followup-table-element thead",
+  );
+  const tbody = document.getElementById("students-followup-tbody");
+  if (!tbody) return;
+
+  const targetDateStr =
+    document.getElementById("dashboard-date-select")?.value ||
+    new Date().toISOString().split("T")[0];
+
+  if (titleEl)
+    titleEl.textContent = `📋 متابعة الطالبات ليوم (${targetDateStr})`;
+
+  if (thead) {
+    thead.innerHTML = `
+      <tr>
+        <th style="width: 45px; text-align: center">م</th>
+        <th>اسم الطالبة</th>
+        <th style="text-align: center">الحلقة</th>
+        <th style="text-align: center">الحضور</th>
+        <th style="text-align: center">الدرس</th>
+        <th style="text-align: center">المراجعة</th>
+        <th style="text-align: center">التلاوة</th>
+      </tr>
+    `;
+  }
+
+  const activeStudents = (window.appStore?.students || [])
+    .filter((s) => s.status === "active")
+    .sort((a, b) => (a.name || "").localeCompare(b.name || "", "ar"));
+  const todayAtt = window.appStore?.attendance || [];
+  const todayTasm = window.appStore?.tasmeea || [];
+  const isWorkday = isOfficialWorkday(targetDateStr);
+
+  const attMap = new Map();
+  todayAtt
+    .filter((a) => a.date === targetDateStr)
+    .forEach((a) => attMap.set(a.studentId, a));
+
+  const tasmMap = new Map();
+  todayTasm
+    .filter((t) => t.date === targetDateStr)
+    .forEach((t) => tasmMap.set(t.studentId, t));
+
+  let html = "";
+  activeStudents.forEach((s, idx) => {
+    const circle = (window.appStore?.circles || []).find(
+      (c) => c.id === s.circleId,
+    );
+    const circleName = circle ? circle.name : "غير مسجلة";
+
+    const att = attMap.get(s.id);
+    let attText = isWorkday
+      ? '<span class="badge badge-danger">🔴 غائبة (تلقائي)</span>'
+      : '<span class="badge" style="background:#e0e0e0; color:#555;">— غير محدد —</span>';
+
+    if (att) {
+      if (att.status === "present")
+        attText = '<span class="badge badge-active">🟢 حاضرة</span>';
+      else if (att.status === "absent")
+        attText = '<span class="badge badge-danger">🔴 غائبة</span>';
+      else if (att.status === "late")
+        attText = '<span class="badge badge-warning">🟡 متأخرة</span>';
+      else if (att.status === "excused")
+        attText =
+          '<span class="badge" style="background:#e3f2fd; color:#1565c0;">🔵 مستأذنة</span>';
+    }
+
+    const tasmRecord = tasmMap.get(s.id) || {};
+    const hifzCol = tasmRecord.hifzSurah
+      ? '<span class="badge badge-active" style="font-size:0.85rem;">✅ سمّعت</span>'
+      : '<span class="text-muted">—</span>';
+    const murajaaCol = tasmRecord.murajaaSurah
+      ? '<span class="badge badge-active" style="font-size:0.85rem;">✅ سمّعت</span>'
+      : '<span class="text-muted">—</span>';
+    const tilawaCol = tasmRecord.tilawaSurah
+      ? '<span class="badge badge-active" style="font-size:0.85rem;">✅ سمّعت</span>'
+      : '<span class="text-muted">—</span>';
+
+    html += `
+      <tr>
+        <td style="text-align: center;">${idx + 1}</td>
+        <td style="font-weight: 700;">${escapeHtml(s.name)}</td>
+        <td style="text-align: center; font-weight: 600; color: var(--text-dark);">${escapeHtml(circleName)}</td>
+        <td style="text-align: center;">${attText}</td>
+        <td style="text-align: center;">${hifzCol}</td>
+        <td style="text-align: center;">${murajaaCol}</td>
+        <td style="text-align: center;">${tilawaCol}</td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML =
+    html ||
+    '<tr><td colspan="7" class="text-center text-muted p-4">لا توجد بيانات طالبات نشطات لهذا اليوم</td></tr>';
+  openModal("modal-students-followup");
+};
+
+window.filterStudentsFollowupModal = function () {
+  const q = (
+    document.getElementById("search-modal-students-followup")?.value || ""
+  )
+    .trim()
+    .toLowerCase();
+  document.querySelectorAll("#students-followup-tbody tr").forEach((row) => {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? "" : "none";
+  });
+};
+
+window.printStudentsFollowup = function () {
+  printTableElement("students-followup-table-element", "متابعة الطالبات");
+};
+
+window.exportStudentsFollowupExcel = function () {
+  const table = document.getElementById("students-followup-table-element");
+  if (!table) return;
+  if (typeof XLSX === "undefined") {
+    alert("⚠️ مكتبة Excel غير متوفرة!");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "متابعة_الطالبات" });
+  XLSX.writeFile(
+    wb,
+    `متابعة_الطالبات_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
+
+window.exportStudentsFollowupPDF = function () {
+  directDownloadPDF(
+    "students-followup-table-element",
+    "متابعة_الطالبات",
+    "متابعة الطالبات لليوم",
+  );
+};
+
+// النقر على بطاقات لوحة النظام
+window.openDashboardDetailsModal = function (type) {
+  const titleEl = document.getElementById("dashboard-details-modal-title");
+  const thead = document.getElementById("dashboard-details-thead");
+  const tbody = document.getElementById("dashboard-details-tbody");
+  if (!tbody || !thead) return;
+
+  const targetDateStr =
+    document.getElementById("dashboard-date-select")?.value ||
+    new Date().toISOString().split("T")[0];
+
+  if (type === "students") {
+    if (titleEl) titleEl.textContent = `👩‍🎓 كشف الطالبات المسجلات بالدار`;
+    thead.innerHTML = `
+      <tr>
+        <th style="width: 45px; text-align: center;">م</th>
+        <th>اسم الطالبة</th>
+        <th>رقم الهوية</th>
+        <th>جوال ولي الأمر</th>
+        <th>الحلقة</th>
+        <th>آخر دخول للنظام</th>
+        <th>الحالة</th>
+      </tr>
+    `;
+    const list = (window.appStore?.students || []).filter(
+      (s) => s.status === "active",
+    );
+    let html = "";
+    list.forEach((s, idx) => {
+      const circle = (window.appStore?.circles || []).find(
+        (c) => c.id === s.circleId,
+      );
+      html += `
+        <tr>
+          <td style="text-align: center;">${idx + 1}</td>
+          <td style="font-weight: 700;">${s.name}</td>
+          <td>${s.nationalId || "—"}</td>
+          <td>${s.parentPhone || s.phone || "—"}</td>
+          <td>${circle ? circle.name : "غير مسجلة"}</td>
+          <td dir="ltr" style="text-align: right;">${s.lastLogin || "لم تدخل بعد"}</td>
+          <td><span class="badge badge-active">نشطة</span></td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML =
+      html ||
+      '<tr><td colspan="7" class="text-center text-muted p-4">لا توجد طالبات نشطات</td></tr>';
+  } else if (type === "teachers") {
+    if (titleEl) titleEl.textContent = `👩‍🏫 كشف المعلمات المكلفات بالدار`;
+    thead.innerHTML = `
+      <tr>
+        <th style="width: 45px; text-align: center;">م</th>
+        <th>اسم المعلمة</th>
+        <th>رقم الجوال</th>
+        <th>الحلقات المكلفة بها</th>
+        <th>آخر دخول للنظام</th>
+      </tr>
+    `;
+    const list = (window.appStore?.teachers || []).filter(
+      (t) => t.status === "active",
+    );
+    let html = "";
+    list.forEach((t, idx) => {
+      const circles = (window.appStore?.circles || []).filter(
+        (c) =>
+          (Array.isArray(c.teacherIds) && c.teacherIds.includes(t.id)) ||
+          c.teacherId === t.id,
+      );
+      const circleNames = circles.map((c) => c.name).join(" ، ") || "غير مكلفة";
+      html += `
+        <tr>
+          <td style="text-align: center;">${idx + 1}</td>
+          <td style="font-weight: 700;">${t.name}</td>
+          <td>${t.phone || "—"}</td>
+          <td>${circleNames}</td>
+          <td dir="ltr" style="text-align: right;">${t.lastLogin || "لم تدخل بعد"}</td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML =
+      html ||
+      '<tr><td colspan="5" class="text-center text-muted p-4">لا توجد معلمات مسجلات</td></tr>';
+  } else if (type === "circles") {
+    if (titleEl) titleEl.textContent = `🏛️ قائمة الحلقات القرآنية بالدار`;
+    thead.innerHTML = `
+      <tr>
+        <th style="width: 45px; text-align: center;">م</th>
+        <th>اسم الحلقة</th>
+        <th>المعلمة المكلفة</th>
+        <th style="text-align: center;">عدد الطالبات</th>
+        <th>الحالة</th>
+      </tr>
+    `;
+    const list = window.appStore?.circles || [];
+    let html = "";
+    list.forEach((c, idx) => {
+      const assignedTeachers = (window.appStore?.teachers || []).filter(
+        (t) =>
+          (Array.isArray(c.teacherIds) && c.teacherIds.includes(t.id)) ||
+          c.teacherId === t.id,
+      );
+      const teacherNames =
+        assignedTeachers.map((t) => t.name).join(" ، ") || "غير معينة";
+      const stuCount = (window.appStore?.students || []).filter(
+        (s) => s.circleId === c.id && s.status === "active",
+      ).length;
+      html += `
+        <tr>
+          <td style="text-align: center;">${idx + 1}</td>
+          <td style="font-weight: 700;">${c.name}</td>
+          <td>${teacherNames}</td>
+          <td style="text-align: center; font-weight: 800;">${stuCount}</td>
+          <td><span class="badge badge-active">${c.status || "نشطة"}</span></td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML =
+      html ||
+      '<tr><td colspan="5" class="text-center text-muted p-4">لا توجد حلقات معرّفة</td></tr>';
+  } else if (type === "present") {
+    if (titleEl)
+      titleEl.textContent = `🟢 كشف الطالبات الحاضرات ليوم (${targetDateStr})`;
+    thead.innerHTML = `
+      <tr>
+        <th style="width: 45px; text-align: center;">م</th>
+        <th>اسم الطالبة</th>
+        <th>الحلقة</th>
+        <th>حالة الحضور</th>
+        <th>ملاحظات</th>
+      </tr>
+    `;
+    const presentAtt = (window.appStore?.attendance || []).filter(
+      (a) =>
+        a.date === targetDateStr &&
+        (a.status === "present" || a.status === "late"),
+    );
+    let html = "";
+    presentAtt.forEach((att, idx) => {
+      const s = (window.appStore?.students || []).find(
+        (st) => st.id === att.studentId,
+      );
+      if (!s) return;
+      const circle = (window.appStore?.circles || []).find(
+        (c) => c.id === s.circleId,
+      );
+      const statusLabel = att.status === "present" ? "🟢 حاضرة" : "🟡 متأخرة";
+      html += `
+        <tr>
+          <td style="text-align: center;">${idx + 1}</td>
+          <td style="font-weight: 700;">${escapeHtml(s.name)}</td>
+          <td>${escapeHtml(circle ? circle.name : "غير مسجلة")}</td>
+          <td><span class="badge ${att.status === "present" ? "badge-active" : "badge-warning"}">${statusLabel}</span></td>
+          <td>${escapeHtml(att.notes) || "—"}</td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML =
+      html ||
+      '<tr><td colspan="5" class="text-center text-muted p-4">لا توجد طالبات حاضرات في هذا التاريخ</td></tr>';
+  }
+
+  openModal("modal-dashboard-details");
+};
+
+window.filterDashboardDetailsModal = function () {
+  const q = (
+    document.getElementById("search-modal-dashboard-details")?.value || ""
+  )
+    .trim()
+    .toLowerCase();
+  document.querySelectorAll("#dashboard-details-tbody tr").forEach((row) => {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? "" : "none";
+  });
+};
+
+window.printDashboardDetails = function () {
+  const title =
+    document.getElementById("dashboard-details-modal-title")?.textContent ||
+    "بيانات لوحة النظام";
+  printTableElement("dashboard-details-table-element", title);
+};
+
+window.exportDashboardDetailsExcel = function () {
+  const table = document.getElementById("dashboard-details-table-element");
+  if (!table) return;
+  if (typeof XLSX === "undefined") {
+    alert("⚠️ مكتبة Excel غير متوفرة!");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "بيانات_لوحة_النظام" });
+  XLSX.writeFile(
+    wb,
+    `لوحة_النظام_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
+
+window.exportDashboardDetailsPDF = function () {
+  const title =
+    document.getElementById("dashboard-details-modal-title")?.textContent ||
+    "لوحة_النظام";
+  directDownloadPDF(
+    "dashboard-details-table-element",
+    "بيانات_لوحة_النظام",
+    title,
+  );
+};
+
+// التقاط موقع المديرة الحالي فعلياً عبر GPS الجهاز وتعبئته في حقل موقع الدار
+// (كان هذا الزر معطلاً تماماً بسبب دالة غير معرّفة - تم اكتشافه وإصلاحه أثناء الفحص)
+window.getCurrentLocationCoords = function () {
+  if (!navigator.geolocation) {
+    alert("⚠️ جهازكِ لا يدعم خاصية تحديد الموقع الجغرافي GPS.");
+    return;
+  }
+
+  const input = document.getElementById("set-org-location");
+  alert("📡 جاري تحديد موقعكِ الحالي...");
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude.toFixed(6);
+      const lng = pos.coords.longitude.toFixed(6);
+      if (input) input.value = `${lat}, ${lng}`;
+      alert(`✅ تم تحديد موقعكِ الحالي: ${lat}, ${lng}`);
+    },
+    () => {
+      alert(
+        "❌ تعذر التقاط موقعكِ الجغرافي. يرجى تفعيل الـ GPS وإعطاء الإذن للمتصفح.",
+      );
+    },
+    { enableHighAccuracy: true, timeout: 10000 },
+  );
+};
+
+// تحديد/إلغاء كأس التميز لطالبة معينة ضمن حلقتها (كأس واحد مستقل لكل حلقة، وليس
+// كأساً عاماً واحداً للنظام بالكامل)
+window.setTrophyStudent = function (studentId) {
+  const current = new Set(window.appStore.trophyStudentIds || []);
+  if (current.has(studentId)) {
+    current.delete(studentId);
+  } else {
+    current.add(studentId);
+  }
+  const newTrophyIds = Array.from(current);
+  window.appStore.trophyStudentIds = newTrophyIds;
+
+  if (typeof saveToCloud === "function") {
+    saveToCloud("screenOrder", "current_order", {
+      order: [...(window.appStore.screenOrder || [])],
+      trophyStudentIds: newTrophyIds,
+    });
+  }
+  if (typeof saveLocalStore === "function") saveLocalStore();
+  if (typeof renderScreenView === "function") renderScreenView();
+};
+
+// تصوير/تصغير الصور قبل تخزينها كـ Base64 (يُستخدم لصور الحسابات الشخصية)
+function resizeImageFileToDataUrl(file, maxSize, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height) {
+          if (width > maxSize) {
+            height = Math.round((height * maxSize) / width);
+            width = maxSize;
+          }
+        } else {
+          if (height > maxSize) {
+            width = Math.round((width * maxSize) / height);
+            height = maxSize;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality || 0.75));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// تسجيل حضور المديرة وجميع المعلمات دفعة واحدة لهذا اليوم (توفيراً للوقت في الأيام
+// التي يحضر فيها الجميع فعلياً، بدل تحضير كل معلمة على حدة يدوياً)
+window.markAllTeachersPresent = function () {
+  const dateVal =
+    document.getElementById("teacher-attendance-date-select")?.value ||
+    new Date().toISOString().split("T")[0];
+  const nowTime = new Date().toLocaleTimeString("ar-SA", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const teachers = window.appStore?.teachers || [];
+  const directorObj = { id: "admin_main" };
+  const allToMark = [directorObj, ...teachers];
+
+  if (!window.appStore.teacherAttendance)
+    window.appStore.teacherAttendance = [];
+
+  allToMark.forEach((t) => {
+    const recordId = `t_att_${t.id}_${dateVal}`;
+    let record = window.appStore.teacherAttendance.find(
+      (a) => a.id === recordId,
+    );
+    if (!record) {
+      record = {
+        id: recordId,
+        teacherId: t.id,
+        date: dateVal,
+        time: nowTime,
+        status: "present",
+        notes: "تحضير يدوي جماعي من المديرة",
+        updatedBy: "admin",
+        createdAt: Date.now(),
+      };
+      window.appStore.teacherAttendance.push(record);
+    } else {
+      record.status = "present";
+      if (!record.time) record.time = nowTime;
+      record.updatedBy = "admin";
+    }
+    if (typeof saveToCloud === "function") {
+      saveToCloud("teacherAttendance", record.id, record);
+    }
+  });
+
+  if (typeof saveLocalStore === "function") saveLocalStore();
+  if (typeof renderTeachersAttendanceTable === "function")
+    renderTeachersAttendanceTable();
+  alert("✅ تم تسجيل حضور المديرة وجميع المعلمات بنجاح لهذا اليوم!");
+};
 
 // ==========================================================================
 // 1. التنقل بين أقسام إدارة الدار (الحلقات، المعلمات، الطالبات)
@@ -1622,6 +2639,56 @@ window.renderAccountsTable = function () {
   tbody.innerHTML = html;
 };
 
+window._pendingAccountPhotoDataUrl = null;
+window._pendingAccountPhotoRemoved = false;
+
+window.previewAccountPhotoFile = async function (event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    alert("⚠️ يرجى اختيار ملف صورة صالح.");
+    event.target.value = "";
+    return;
+  }
+
+  try {
+    const dataUrl = await resizeImageFileToDataUrl(file, 200, 0.75);
+    window._pendingAccountPhotoDataUrl = dataUrl;
+    window._pendingAccountPhotoRemoved = false;
+
+    const preview = document.getElementById("edit-account-photo-preview");
+    const letter = document.getElementById("edit-account-photo-letter");
+    const removeBtn = document.getElementById("btn-remove-account-photo");
+    if (preview) {
+      preview.src = dataUrl;
+      preview.style.display = "block";
+    }
+    if (letter) letter.style.display = "none";
+    if (removeBtn) removeBtn.style.display = "inline-flex";
+  } catch (e) {
+    console.error("تعذر معالجة الصورة:", e);
+    alert("⚠️ تعذر معالجة الصورة المختارة، يرجى تجربة صورة أخرى.");
+  }
+};
+
+window.removeAccountPhoto = function () {
+  window._pendingAccountPhotoDataUrl = null;
+  window._pendingAccountPhotoRemoved = true;
+
+  const fileInput = document.getElementById("edit-account-photo-file");
+  const preview = document.getElementById("edit-account-photo-preview");
+  const letter = document.getElementById("edit-account-photo-letter");
+  const removeBtn = document.getElementById("btn-remove-account-photo");
+  if (fileInput) fileInput.value = "";
+  if (preview) {
+    preview.src = "";
+    preview.style.display = "none";
+  }
+  if (letter) letter.style.display = "flex";
+  if (removeBtn) removeBtn.style.display = "none";
+};
+
 window.openModalEditUserAccount = function (userId) {
   const user = (window.appStore?.users || []).find((u) => u.id === userId);
   if (!user) return;
@@ -1638,6 +2705,33 @@ window.openModalEditUserAccount = function (userId) {
     "edit-account-password",
     user.pass || (user.role === "student" ? "1111" : "1234"),
   );
+
+  window._pendingAccountPhotoDataUrl = null;
+  window._pendingAccountPhotoRemoved = false;
+  const fileInput = document.getElementById("edit-account-photo-file");
+  const preview = document.getElementById("edit-account-photo-preview");
+  const letter = document.getElementById("edit-account-photo-letter");
+  const removeBtn = document.getElementById("btn-remove-account-photo");
+  if (fileInput) fileInput.value = "";
+
+  if (user.photoURL) {
+    if (preview) {
+      preview.src = user.photoURL;
+      preview.style.display = "block";
+    }
+    if (letter) letter.style.display = "none";
+    if (removeBtn) removeBtn.style.display = "inline-flex";
+  } else {
+    if (preview) {
+      preview.src = "";
+      preview.style.display = "none";
+    }
+    if (letter) {
+      letter.style.display = "flex";
+      letter.textContent = user.name ? user.name.charAt(0) : "؟";
+    }
+    if (removeBtn) removeBtn.style.display = "none";
+  }
 
   openModal("modal-edit-user-account");
 };
@@ -1661,10 +2755,17 @@ window.handleSaveUserAccount = function (e) {
   ).trim();
   if (newPass) user.pass = newPass;
 
+  if (window._pendingAccountPhotoDataUrl) {
+    user.photoURL = window._pendingAccountPhotoDataUrl;
+  } else if (window._pendingAccountPhotoRemoved) {
+    user.photoURL = null;
+  }
+
   if (user.role === "student") {
     const stu = (window.appStore?.students || []).find((s) => s.id === user.id);
     if (stu) {
       stu.name = user.name;
+      stu.photoURL = user.photoURL || null;
       if (typeof saveToCloud === "function")
         saveToCloud("students", stu.id, stu);
     }
@@ -1675,6 +2776,7 @@ window.handleSaveUserAccount = function (e) {
     if (teach) {
       teach.name = user.name;
       teach.phone = user.username;
+      teach.photoURL = user.photoURL || null;
       if (typeof saveToCloud === "function")
         saveToCloud("teachers", teach.id, teach);
     }
@@ -1682,6 +2784,17 @@ window.handleSaveUserAccount = function (e) {
 
   if (typeof saveToCloud === "function") saveToCloud("users", user.id, user);
   if (typeof saveLocalStore === "function") saveLocalStore();
+
+  // تحديث صورة/اسم الشريط الجانبي فوراً لو كان الحساب المعدَّل هو المستخدمة الحالية نفسها
+  if (window.currentUser && window.currentUser.id === user.id) {
+    window.currentUser.name = user.name;
+    window.currentUser.photoURL = user.photoURL;
+    if (typeof updateSidebarUserAvatar === "function")
+      updateSidebarUserAvatar(window.currentUser);
+  }
+
+  window._pendingAccountPhotoDataUrl = null;
+  window._pendingAccountPhotoRemoved = false;
 
   closeModal("modal-edit-user-account");
   alert("✅ تم حفظ وتأكيد تعديلات الحساب بنجاح!");
@@ -2207,11 +3320,77 @@ window.renderTamayuzBoard = function () {
   tbody.innerHTML = html;
 };
 
+// تفعيل/إلغاء وضع ملء الشاشة للوحة العرض المتحركة فقط (بدون أي عناصر أخرى من الصفحة)
+function exitScreenFullscreenIfActive() {
+  const exit =
+    document.exitFullscreen ||
+    document.webkitExitFullscreen ||
+    document.msExitFullscreen;
+  if (exit) exit.call(document);
+}
+
+window.toggleScreenFullscreen = function () {
+  const target = document.getElementById("mosque-screen-grid");
+  if (!target) return;
+
+  if (!document.fullscreenElement) {
+    const request =
+      target.requestFullscreen ||
+      target.webkitRequestFullscreen ||
+      target.msRequestFullscreen;
+    if (request) {
+      request.call(target).catch((e) => {
+        console.warn("تعذر تفعيل وضع ملء الشاشة:", e);
+        alert("⚠️ تعذر تفعيل وضع ملء الشاشة على هذا الجهاز/المتصفح.");
+      });
+    }
+  } else {
+    exitScreenFullscreenIfActive();
+  }
+};
+
+// الضغط في أي مكان على اللوحة نفسها أثناء ملء الشاشة يخرج منها مباشرة
+document.addEventListener("click", () => {
+  if (
+    document.fullscreenElement &&
+    document.fullscreenElement.id === "mosque-screen-grid"
+  ) {
+    exitScreenFullscreenIfActive();
+  }
+});
+
+document.addEventListener("fullscreenchange", () => {
+  const btn = document.getElementById("btn-screen-fullscreen");
+  if (!btn) return;
+  btn.textContent = document.fullscreenElement
+    ? "⤢ الخروج من ملء الشاشة"
+    : "🖥️ ملء الشاشة";
+});
+
 window.renderScreenView = function () {
   const grid = document.getElementById("mosque-screen-grid");
   const tbody = document.getElementById("screen-manage-table-body");
 
   const students = getQualifyingTamayuzStudents("current");
+
+  // الطالبة "الأولى" في كل حلقة (أول من تظهر ضمن ترتيب المتميزات الخاص بتلك
+  // الحلقة تحديداً) هي وحدها المؤهلة لنيل كأس التميز - بقية طالبات نفس الحلقة
+  // غير مؤهلات للكأس مهما كان ترتيبهن
+  const circleLeaderIds = new Set();
+  {
+    const seenCircles = new Set();
+    students.forEach((stu) => {
+      if (!seenCircles.has(stu.circleId)) {
+        seenCircles.add(stu.circleId);
+        circleLeaderIds.add(stu.id);
+      }
+    });
+  }
+
+  // الكأس لا يُمنح تلقائياً أبداً - فقط من حدّدته المديرة صراحةً عبر مربع
+  // الاختيار في جدول "التحكم في ترتيب ظهور نجمات التميز" (كأس واحد كحد أقصى
+  // لكل حلقة بما أن المؤهلة الوحيدة هي "الأولى" فيها)
+  const trophyStudentIds = new Set(window.appStore?.trophyStudentIds || []);
 
   if (grid) {
     if (students.length === 0) {
@@ -2229,17 +3408,19 @@ window.renderScreenView = function () {
         );
         const circleName = circle ? circle.name : "جامع الهدى";
         const isFirst = idx === 0;
+        const isTrophyWinner = trophyStudentIds.has(stu.id);
 
         gridHtml += `
           <div class="card" style="text-align: center; border: ${isFirst ? "2px solid var(--primary-brown)" : "1px solid var(--border-color)"}; background: ${isFirst ? "#faf5ff" : "#fff"}; border-radius: 10px; padding: 1.25rem;">
             <div style="font-size: 1.6rem; font-weight: 900; color: var(--primary-brown); margin-bottom: 0.4rem;">
-              #${idx + 1} ${isFirst ? "🏆" : "⭐"}
+              #${idx + 1} ${isTrophyWinner ? "🏆" : "⭐"}
             </div>
-            <h3 style="font-size: 1.15rem; font-weight: 800; color: var(--text-dark); margin-bottom: 4px;">${stu.name}</h3>
-            <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 8px;">حلقة: ${circleName}</p>
+            <h3 style="font-size: 1.15rem; font-weight: 800; color: var(--text-dark); margin-bottom: 4px;">${escapeHtml(stu.name)}</h3>
+            <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 8px;">حلقة: ${escapeHtml(circleName)}</p>
             <div style="display: flex; justify-content: center; gap: 0.4rem;">
               <span class="badge badge-active">حضور 4 أيام</span>
               <span class="badge badge-active">ممتاز</span>
+              ${isTrophyWinner ? '<span class="badge" style="background:#6b21a8; color:#fff;">🏆 كأس التميز</span>' : ""}
             </div>
           </div>
         `;
@@ -2251,7 +3432,7 @@ window.renderScreenView = function () {
   if (tbody) {
     if (students.length === 0) {
       tbody.innerHTML =
-        '<tr><td colspan="5" class="text-center text-muted p-3">لا توجد طالبات متميزات حالياً للترتيب</td></tr>';
+        '<tr><td colspan="6" class="text-center text-muted p-3">لا توجد طالبات متميزات حالياً للترتيب</td></tr>';
     } else {
       let tbodyHtml = "";
       students.forEach((stu, idx) => {
@@ -2259,12 +3440,23 @@ window.renderScreenView = function () {
           (c) => c.id === stu.circleId,
         );
         const circleName = circle ? circle.name : "جامع الهدى";
+        const isTrophyWinner = trophyStudentIds.has(stu.id);
+        // الكأس متاح فقط لطالبة "الأولى" في حلقتها - بقية طالبات الحلقة لا
+        // يظهر لهن مربع اختيار
+        const isTrophyEligible = circleLeaderIds.has(stu.id);
 
         tbodyHtml += `
           <tr>
-            <td style="text-align: center; font-weight: 800;">${idx + 1} ${idx === 0 ? "🏆" : ""}</td>
-            <td style="font-weight: 700;">${stu.name}</td>
-            <td>${circleName}</td>
+            <td style="text-align: center; font-weight: 800;">${idx + 1} ${isTrophyWinner ? "🏆" : ""}</td>
+            <td style="text-align: center;">
+              ${
+                isTrophyEligible
+                  ? `<input type="checkbox" title="منح الكأس لهذه الطالبة" ${isTrophyWinner ? "checked" : ""} onchange="setTrophyStudent('${stu.id}')" style="width: 18px; height: 18px; cursor: pointer;">`
+                  : `<span class="text-muted" style="font-size:0.8rem;" title="الكأس متاح فقط لأول طالبة في كل حلقة">—</span>`
+              }
+            </td>
+            <td style="font-weight: 700;">${escapeHtml(stu.name)}</td>
+            <td>${escapeHtml(circleName)}</td>
             <td><span class="badge badge-active">متميزة (حضور 100% وممتاز)</span></td>
             <td style="text-align: center;">
               <button class="btn btn-outline-brown btn-sm" onclick="moveScreenStudentUp(${idx})" ${idx === 0 ? "disabled" : ""}>⬆️ للأعلى</button>
@@ -2842,3 +4034,400 @@ function getCircleName(circleId) {
   const c = (window.appStore?.circles || []).find((x) => x.id === circleId);
   return c ? c.name : "—";
 }
+
+// ==========================================================================
+// القسم المالي: التقارير المالية (إيرادات/مصروفات) + مسير الرواتب
+// الصلاحيات: المديرة تُعدّل كل شيء. المعلمة المعيَّنة "مسؤولة مالية" (isFinance)
+// ترى الإيرادات/المصروفات بدون تعديل، وتستطيع فقط إضافة/تعديل "الزيادة" لبقية
+// المعلمات في مسير الرواتب (وليس لنفسها، ولا لمكافآتهن الأساسية)
+// ==========================================================================
+
+function isFinanceAdminUser() {
+  return Boolean(
+    window.currentUser && window.currentUser.role === window.ROLES.ADMIN,
+  );
+}
+
+function isFinanceTeacherUser() {
+  const user = window.currentUser;
+  if (!user || user.role !== window.ROLES.TEACHER) return false;
+  if (user.isFinance === true) return true;
+  const teacherId = user.teacherId || user.id;
+  if (window.appStore?.settings?.financialTeacherId === teacherId) return true;
+  return (window.appStore?.teachers || []).some(
+    (t) =>
+      (t.id === teacherId || t.userId === user.id) && t.isFinance === true,
+  );
+}
+
+window.switchFinanceSubTab = function (tab) {
+  const btnReports = document.getElementById("tab-btn-finance-reports");
+  const btnPayroll = document.getElementById("tab-btn-finance-payroll");
+  const boxReports = document.getElementById("box-finance-reports");
+  const boxPayroll = document.getElementById("box-finance-payroll");
+
+  if (tab === "payroll") {
+    btnPayroll?.classList.add("active");
+    btnReports?.classList.remove("active");
+    if (boxPayroll) {
+      boxPayroll.classList.remove("style-hidden");
+      boxPayroll.style.display = "block";
+    }
+    if (boxReports) {
+      boxReports.classList.add("style-hidden");
+      boxReports.style.display = "none";
+    }
+    renderPayrollTable();
+  } else {
+    btnReports?.classList.add("active");
+    btnPayroll?.classList.remove("active");
+    if (boxReports) {
+      boxReports.classList.remove("style-hidden");
+      boxReports.style.display = "block";
+    }
+    if (boxPayroll) {
+      boxPayroll.classList.add("style-hidden");
+      boxPayroll.style.display = "none";
+    }
+    renderFinanceReports();
+  }
+};
+
+window.renderFinanceReports = function () {
+  const revBody = document.getElementById("finance-revenues-tbody");
+  const expBody = document.getElementById("finance-expenses-tbody");
+  if (!revBody || !expBody) return;
+
+  const isAdmin = isFinanceAdminUser();
+  const fmt = (n) =>
+    (Math.round((n + Number.EPSILON) * 100) / 100).toLocaleString("ar-SA");
+
+  const revenues = (window.appStore.financeRevenues || [])
+    .slice()
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const expenses = (window.appStore.financeExpenses || [])
+    .slice()
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  const totalRevenue = revenues.reduce(
+    (sum, r) => sum + (parseFloat(r.amount) || 0),
+    0,
+  );
+  const totalExpense = expenses.reduce(
+    (sum, e) => sum + (parseFloat(e.amount) || 0),
+    0,
+  );
+  const netBalance = totalRevenue - totalExpense;
+
+  const totalRevenueEl = document.getElementById("finance-total-revenue");
+  const totalExpenseEl = document.getElementById("finance-total-expense");
+  const netBalanceEl = document.getElementById("finance-net-balance");
+  if (totalRevenueEl) totalRevenueEl.textContent = fmt(totalRevenue);
+  if (totalExpenseEl) totalExpenseEl.textContent = fmt(totalExpense);
+  if (netBalanceEl) netBalanceEl.textContent = fmt(netBalance);
+
+  revBody.innerHTML =
+    revenues.length === 0
+      ? '<tr><td colspan="4" class="text-center text-muted p-3">لا توجد إيرادات مسجلة</td></tr>'
+      : revenues
+          .map(
+            (r) => `
+        <tr>
+          <td>${escapeHtml(r.date) || "—"}</td>
+          <td>${escapeHtml(r.source) || "—"}</td>
+          <td style="color:#2e7d32; font-weight:800;">${fmt(parseFloat(r.amount) || 0)}</td>
+          <td class="nav-admin-only">${isAdmin ? `<button class="btn btn-danger btn-sm" onclick="deleteFinanceRevenue('${r.id}')">حذف</button>` : ""}</td>
+        </tr>
+      `,
+          )
+          .join("");
+
+  expBody.innerHTML =
+    expenses.length === 0
+      ? '<tr><td colspan="5" class="text-center text-muted p-3">لا توجد مصروفات مسجلة</td></tr>'
+      : expenses
+          .map(
+            (e) => `
+        <tr>
+          <td>${escapeHtml(e.date) || "—"}</td>
+          <td>${escapeHtml(e.category) || "—"}</td>
+          <td>${escapeHtml(e.notes) || "—"}</td>
+          <td style="color:#c62828; font-weight:800;">${fmt(parseFloat(e.amount) || 0)}</td>
+          <td class="nav-admin-only">${isAdmin ? `<button class="btn btn-danger btn-sm" onclick="deleteFinanceExpense('${e.id}')">حذف</button>` : ""}</td>
+        </tr>
+      `,
+          )
+          .join("");
+};
+
+window.handleAddFinanceRevenue = function (e) {
+  e.preventDefault();
+  if (!isFinanceAdminUser()) {
+    alert("⚠️ إضافة الإيرادات متاحة للمديرة فقط.");
+    return;
+  }
+  const form = e.target;
+  const amount = parseFloat(form.elements["amount"].value);
+  const date = form.elements["date"].value;
+  const source = (form.elements["source"].value || "").trim();
+  if (!amount || amount <= 0 || !date) {
+    alert("⚠️ يرجى إدخال مبلغ وتاريخ صحيحين.");
+    return;
+  }
+
+  const record = {
+    id: "rev_" + Date.now(),
+    amount,
+    date,
+    source,
+    createdBy: window.currentUser.name,
+    createdAt: Date.now(),
+  };
+  if (!window.appStore.financeRevenues) window.appStore.financeRevenues = [];
+  window.appStore.financeRevenues.push(record);
+  if (typeof saveToCloud === "function")
+    saveToCloud("financeRevenues", record.id, record);
+  if (typeof saveLocalStore === "function") saveLocalStore();
+  form.reset();
+  renderFinanceReports();
+};
+
+window.handleAddFinanceExpense = function (e) {
+  e.preventDefault();
+  if (!isFinanceAdminUser()) {
+    alert("⚠️ إضافة المصروفات متاحة للمديرة فقط.");
+    return;
+  }
+  const form = e.target;
+  const category = (form.elements["category"].value || "").trim();
+  const amount = parseFloat(form.elements["amount"].value);
+  const date = form.elements["date"].value;
+  const notes = (form.elements["notes"].value || "").trim();
+  if (!category || !amount || amount <= 0 || !date) {
+    alert("⚠️ يرجى إدخال الصنف والمبلغ والتاريخ بشكل صحيح.");
+    return;
+  }
+
+  const record = {
+    id: "exp_" + Date.now(),
+    category,
+    amount,
+    date,
+    notes,
+    createdBy: window.currentUser.name,
+    createdAt: Date.now(),
+  };
+  if (!window.appStore.financeExpenses) window.appStore.financeExpenses = [];
+  window.appStore.financeExpenses.push(record);
+  if (typeof saveToCloud === "function")
+    saveToCloud("financeExpenses", record.id, record);
+  if (typeof saveLocalStore === "function") saveLocalStore();
+  form.reset();
+  renderFinanceReports();
+};
+
+window.deleteFinanceRevenue = function (id) {
+  if (!isFinanceAdminUser()) return;
+  if (!confirm("هل أنتِ متأكدة من حذف هذا الإيراد؟")) return;
+  window.appStore.financeRevenues = (
+    window.appStore.financeRevenues || []
+  ).filter((r) => r.id !== id);
+  if (typeof saveToCloud === "function")
+    saveToCloud("financeRevenues", id, null, true);
+  if (typeof saveLocalStore === "function") saveLocalStore();
+  renderFinanceReports();
+};
+
+window.deleteFinanceExpense = function (id) {
+  if (!isFinanceAdminUser()) return;
+  if (!confirm("هل أنتِ متأكدة من حذف هذا المصروف؟")) return;
+  window.appStore.financeExpenses = (
+    window.appStore.financeExpenses || []
+  ).filter((e) => e.id !== id);
+  if (typeof saveToCloud === "function")
+    saveToCloud("financeExpenses", id, null, true);
+  if (typeof saveLocalStore === "function") saveLocalStore();
+  renderFinanceReports();
+};
+
+window.exportFinanceRevenuesExcel = function () {
+  const table = document.getElementById("finance-revenues-table");
+  if (!table || typeof XLSX === "undefined") {
+    alert("⚠️ لا توجد بيانات لتصديرها.");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "الإيرادات" });
+  XLSX.writeFile(
+    wb,
+    `سجل_الإيرادات_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
+
+window.exportFinanceExpensesExcel = function () {
+  const table = document.getElementById("finance-expenses-table");
+  if (!table || typeof XLSX === "undefined") {
+    alert("⚠️ لا توجد بيانات لتصديرها.");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "المصروفات" });
+  XLSX.writeFile(
+    wb,
+    `سجل_المصروفات_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
+
+// ---- مسير الرواتب ----
+
+function getPayrollRecord(teacherId, month) {
+  const id = `payroll_${teacherId}_${month}`;
+  return (
+    (window.appStore.payroll || []).find((p) => p.id === id) || {
+      id,
+      teacherId,
+      month,
+      baseSalary: 0,
+      bonus: 0,
+    }
+  );
+}
+
+// عدد أيام العمل الرسمية (أحد-أربعاء) خلال شهر ميلادي بصيغة YYYY-MM
+function countWorkdaysInMonth(month) {
+  const [y, m] = month.split("-").map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  let count = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const isWorkday =
+      typeof isOfficialWorkday === "function"
+        ? isOfficialWorkday(dateStr)
+        : true;
+    if (isWorkday) count++;
+  }
+  return count || 1;
+}
+
+window.renderPayrollTable = function () {
+  const tbody = document.getElementById("payroll-tbody");
+  const monthInput = document.getElementById("payroll-month-select");
+  if (!tbody || !monthInput) return;
+
+  if (!monthInput.value) {
+    const now = new Date();
+    monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  }
+  const month = monthInput.value;
+  const workdaysInMonth = countWorkdaysInMonth(month);
+
+  const isAdmin = isFinanceAdminUser();
+  const isFinTeacher = isFinanceTeacherUser();
+  const currentUserTeacherId = window.currentUser
+    ? window.currentUser.teacherId || window.currentUser.id
+    : null;
+
+  const teachers = (window.appStore.teachers || []).filter(
+    (t) => t.status !== "suspended",
+  );
+  const fmt = (n) =>
+    (Math.round((n + Number.EPSILON) * 100) / 100).toLocaleString("ar-SA");
+
+  tbody.innerHTML = teachers
+    .map((t) => {
+      const rec = getPayrollRecord(t.id, month);
+      const attRecords = (window.appStore.teacherAttendance || []).filter(
+        (a) => a.teacherId === t.id && a.date && a.date.startsWith(month),
+      );
+      const presentDays = attRecords.filter(
+        (a) => a.status === "present" || a.status === "late",
+      ).length;
+      const excusedDays = attRecords.filter(
+        (a) => a.status === "excused",
+      ).length;
+      const absentDays = Math.max(
+        0,
+        workdaysInMonth - presentDays - excusedDays,
+      );
+
+      const baseSalary = parseFloat(rec.baseSalary) || 0;
+      const bonus = parseFloat(rec.bonus) || 0;
+      const dailyRate = workdaysInMonth > 0 ? baseSalary / workdaysInMonth : 0;
+      const deduction = dailyRate * absentDays;
+      const total = Math.max(0, baseSalary - deduction + bonus);
+
+      const canEditBase = isAdmin;
+      const canEditBonus =
+        isAdmin || (isFinTeacher && t.id !== currentUserTeacherId);
+
+      return `
+      <tr>
+        <td style="font-weight:700; text-align:right;">${escapeHtml(t.name)}</td>
+        <td>${
+          canEditBase
+            ? `<input type="number" step="0.01" min="0" class="form-control" style="width:110px; display:inline-block;" value="${baseSalary}" onchange="savePayrollField('${t.id}', '${month}', 'baseSalary', this.value)">`
+            : fmt(baseSalary)
+        }</td>
+        <td>${fmt(dailyRate)}</td>
+        <td style="color:#2e7d32; font-weight:700;">${presentDays}</td>
+        <td style="color:#c62828; font-weight:700;">${absentDays}</td>
+        <td style="color:#1565c0; font-weight:700;">${excusedDays}</td>
+        <td>${
+          canEditBonus
+            ? `<input type="number" step="0.01" class="form-control" style="width:100px; display:inline-block;" value="${bonus}" onchange="savePayrollField('${t.id}', '${month}', 'bonus', this.value)">`
+            : fmt(bonus)
+        }</td>
+        <td style="font-weight:900; color:var(--primary-brown);">${fmt(total)}</td>
+      </tr>
+    `;
+    })
+    .join("");
+};
+
+window.savePayrollField = function (teacherId, month, field, value) {
+  const isAdmin = isFinanceAdminUser();
+  const isFinTeacher = isFinanceTeacherUser();
+  const currentUserTeacherId = window.currentUser
+    ? window.currentUser.teacherId || window.currentUser.id
+    : null;
+
+  if (field === "baseSalary" && !isAdmin) {
+    alert("⚠️ تعديل المكافأة الأساسية متاح للمديرة فقط.");
+    renderPayrollTable();
+    return;
+  }
+  if (
+    field === "bonus" &&
+    !(isAdmin || (isFinTeacher && teacherId !== currentUserTeacherId))
+  ) {
+    alert("⚠️ غير مصرح لكِ بهذا التعديل.");
+    renderPayrollTable();
+    return;
+  }
+
+  const id = `payroll_${teacherId}_${month}`;
+  let rec = (window.appStore.payroll || []).find((p) => p.id === id);
+  if (!rec) {
+    rec = { id, teacherId, month, baseSalary: 0, bonus: 0 };
+    if (!window.appStore.payroll) window.appStore.payroll = [];
+    window.appStore.payroll.push(rec);
+  }
+  rec[field] = parseFloat(value) || 0;
+  rec.updatedBy = window.currentUser?.name || "";
+  rec.updatedAt = Date.now();
+
+  if (typeof saveToCloud === "function") saveToCloud("payroll", id, rec);
+  if (typeof saveLocalStore === "function") saveLocalStore();
+  renderPayrollTable();
+};
+
+window.exportPayrollExcel = function () {
+  const table = document.getElementById("payroll-table");
+  if (!table || typeof XLSX === "undefined") {
+    alert("⚠️ لا توجد بيانات لتصديرها.");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "مسير الرواتب" });
+  XLSX.writeFile(
+    wb,
+    `مسير_الرواتب_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};

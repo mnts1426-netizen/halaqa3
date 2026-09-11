@@ -10,6 +10,20 @@ let firebaseAuth = null;
 let isFirebaseOnline = false;
 let isSyncInitialized = false;
 
+// تحصين ضد حقن HTML/جافاسكريبت (XSS): يُستخدم عند إدراج أي نص مصدره المستخدم
+// (اسم، ملاحظة، رقم جوال...) داخل innerHTML، خصوصاً النصوص القادمة من نماذج
+// عامة لا تتطلب تسجيل دخول (مثل استمارة طلب الالتحاق) حيث يمكن لأي زائر كتابة
+// أي نص فيها - بدون هذا التحصين قد يُنفَّذ كودٌ ضار داخل متصفح المديرة نفسها
+window.escapeHtml = function (value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+};
+
 // الإعدادات الافتراضية
 const SAFE_DEFAULT_SETTINGS = window.DEFAULT_SETTINGS || {
   orgName: "دار المُهتدية النسائية",
@@ -49,8 +63,13 @@ window.appStore = window.appStore || {
   screenOrder: [],
   circlesOrder: [],
   trophyStudentId: null,
+  trophyStudentIds: [],
   settings: { ...SAFE_DEFAULT_SETTINGS },
   logs: [],
+  teacherLogs: [],
+  financeRevenues: [],
+  financeExpenses: [],
+  payroll: [],
 };
 
 // تهيئة Firebase والاتصال بـ Firestore
@@ -198,6 +217,10 @@ function ensureArraysIntegrity() {
     "messages",
     "screenOrder",
     "logs",
+    "teacherLogs",
+    "financeRevenues",
+    "financeExpenses",
+    "payroll",
   ];
   keys.forEach((k) => {
     if (!Array.isArray(window.appStore[k])) window.appStore[k] = [];
@@ -324,6 +347,7 @@ function seedProductionAdminOnly() {
     screenOrder: [],
     circlesOrder: [],
     trophyStudentId: null,
+    trophyStudentIds: [],
     settings: { ...SAFE_DEFAULT_SETTINGS },
     logs: [
       {
@@ -334,6 +358,10 @@ function seedProductionAdminOnly() {
         createdAt: baseTime,
       },
     ],
+    teacherLogs: [],
+    financeRevenues: [],
+    financeExpenses: [],
+    payroll: [],
   };
   saveLocalStore();
 }
@@ -372,6 +400,10 @@ window.autoMigrateLocalDataToCloud = async function () {
     "tasmeea",
     "tests",
     "notifications",
+    "teacherLogs",
+    "financeRevenues",
+    "financeExpenses",
+    "payroll",
   ];
 
   try {
@@ -477,6 +509,10 @@ function setupRealtimeCloudSync() {
     "messages",
     "screenOrder",
     "settings",
+    "teacherLogs",
+    "financeRevenues",
+    "financeExpenses",
+    "payroll",
   ];
 
   // مجموعتا الحضور والتسميع فقط تُقيَّدان بنافذة زمنية حديثة، لأنهما
@@ -506,6 +542,14 @@ function setupRealtimeCloudSync() {
               if (typeof applyAppIdentity === "function") applyAppIdentity();
             } else if (colName === "screenOrder") {
               window.appStore.screenOrder = items[0]?.order || [];
+              // ترقية من حقل "الكأس المفرد" القديم إلى قائمة (كأس واحدة لكل حلقة) دون
+              // فقدان أي اختيار سابق كانت قد حدّدته المديرة قبل هذا التحديث
+              const cloudTrophyIds = items[0]?.trophyStudentIds;
+              window.appStore.trophyStudentIds = Array.isArray(cloudTrophyIds)
+                ? cloudTrophyIds
+                : items[0]?.trophyStudentId
+                  ? [items[0].trophyStudentId]
+                  : [];
             } else {
               window.appStore[colName] = items;
             }

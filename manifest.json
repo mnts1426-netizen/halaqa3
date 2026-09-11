@@ -1,0 +1,17 @@
+{
+  "name": "دار المُهتدية النسائية",
+  "short_name": "دار المُهتدية",
+  "description": "نظام إدارة حلقات تحفيظ القرآن الكريم - دار المُهتدية النسائية",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#fcfaff",
+  "theme_color": "#6b21a8",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    { "src": "logo12.jpeg", "sizes": "192x192", "type": "image/jpeg", "purpose": "any" },
+    { "src": "logo12.jpeg", "sizes": "512x512", "type": "image/jpeg", "purpose": "any" }
+  ]
+}

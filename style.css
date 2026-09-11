@@ -7,29 +7,55 @@
   --primary-brown: #6b21a8;
   --primary-dark: #581c87;
   --primary-light: #f5f3ff;
+  --primary-subtle: #f8f4ff;
 
   --accent-gold: #c084fc;
   --accent-gold-dark: #7e22ce;
   --accent-gold-light: #faf5ff;
+  --accent-gold-border: #e9d5ff;
+
+  /* لمسة الموف الغامق الديكورية (بديل البني الخشبي في نسخة الرجال) */
+  --accent-plum: #86198f;
+  --accent-plum-dark: #701a75;
+  --accent-plum-light: #fdf4ff;
+
+  --slate-light: #f3f0fa;
 
   --bg-main: #fcfaff;
   --bg-card: #ffffff;
+  --bg-card-subtle: #fdfbff;
   --border-color: #eedffc;
+  --border-color-hover: #d8b4fe;
   --text-dark: #20162e;
+  --text-secondary: #4a3860;
   --text-muted: #6e5d80;
+  --text-light: #ffffff;
 
   --status-green-bg: #e8f5e9;
   --status-green-text: #2e7d32;
+  --status-green-border: #a5d6a7;
   --status-red-bg: #ffebee;
   --status-red-text: #c62828;
+  --status-red-border: #ef9a9a;
   --status-yellow-bg: #fff8e1;
   --status-yellow-text: #b78103;
+  --status-yellow-border: #ffe082;
 
   --radius-sm: 6px;
   --radius-md: 12px;
   --radius-lg: 18px;
 
   --font-family: "Tajawal", "Cairo", sans-serif;
+
+  /* نظام ظلال ثلاثي الأبعاد لإعطاء مظهر عائم أنيق للبطاقات */
+  --shadow-subtle:
+    0 2px 4px rgba(107, 33, 168, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-card:
+    0 8px 24px -4px rgba(107, 33, 168, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+  --shadow-card-hover:
+    0 16px 32px -4px rgba(107, 33, 168, 0.16),
+    0 6px 12px -2px rgba(0, 0, 0, 0.03);
+  --shadow-modal: 0 25px 50px -12px rgba(107, 33, 168, 0.22);
 }
 
 * {
@@ -173,6 +199,16 @@ body {
   background-color: var(--primary-light);
 }
 
+.btn-outline-custom {
+  background-color: transparent;
+  border-color: var(--primary-brown);
+  color: var(--primary-brown);
+}
+
+.btn-outline-custom:hover {
+  background-color: var(--primary-light);
+}
+
 #view-login .btn-outline-brown,
 #view-student-login .btn-outline-brown {
   border-color: #0b6b7d;
@@ -201,6 +237,11 @@ body {
 .btn-lg {
   padding: 0.85rem 1.5rem;
   font-size: 1.05rem;
+}
+
+.btn-sm {
+  padding: 0.38rem 0.8rem;
+  font-size: 0.82rem;
 }
 
 .login-right-panel {
@@ -459,6 +500,10 @@ body {
   display: block;
 }
 
+.flex-1 {
+  flex: 1;
+}
+
 .flex-between {
   display: flex;
   align-items: center;
@@ -544,6 +589,10 @@ body {
   color: var(--status-yellow-text);
 }
 
+.stat-details {
+  flex: 1;
+}
+
 .stat-label {
   font-size: 0.82rem;
   color: var(--text-muted);
@@ -624,6 +673,12 @@ body {
   min-width: 140px;
 }
 
+.bulk-actions-bar {
+  background: var(--primary-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
 .table-responsive {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -653,6 +708,19 @@ body {
 
 .data-table tbody tr:hover {
   background-color: #faf5ff;
+}
+
+/* جدول التقارير الرسمية تحديداً: النص الطويل ينتقل لسطر إضافي بدل الانحراف خارج
+   حدود عموده (table-layout: auto يوسّع العمود تلقائياً حسب الحاجة بدل قصّ المحتوى) */
+#report-results-table {
+  table-layout: auto;
+}
+
+#report-results-table th,
+#report-results-table td {
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .circles-grid {
@@ -902,6 +970,22 @@ body {
   border: 1px solid #eedffc;
 }
 
+/* نافذة المتابعة الشاملة بحجم الشاشة الكاملة كواجهة مستقلة */
+.modal-fullscreen-overlay {
+  padding: 0 !important;
+}
+
+.modal-card.modal-fullscreen {
+  max-width: 100% !important;
+  width: 100% !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  border: none !important;
+  border-top: 4px solid var(--accent-gold) !important;
+  background: var(--bg-main);
+}
+
 .modal-card form {
   display: flex !important;
   flex-direction: column !important;
@@ -997,9 +1081,33 @@ body {
   gap: 0.8rem;
 }
 
+.complex-hub-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.15rem;
+}
+
+.hub-card {
+  cursor: pointer;
+  text-align: center;
+  padding: 1.5rem 1.25rem;
+  transition: all 0.25s ease;
+}
+
 .complex-hub-cards .hub-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(107, 33, 168, 0.12);
+  border-color: var(--accent-gold);
+}
+
+.hub-card.active {
+  border-color: var(--primary-brown);
+  border-top: 3.5px solid var(--accent-gold);
+  background: var(--primary-subtle);
+}
+
+.hub-card.active h3 {
+  color: var(--primary-brown);
 }
 
 .mt-1 {
@@ -1026,6 +1134,189 @@ body {
   grid-template-columns: repeat(3, 1fr);
   gap: 0.6rem;
   margin-bottom: 1.25rem;
+}
+
+/* ==========================================================================
+   لوحة شاشة العرض التفاعلية (التميز الأسبوعي / المنجزات أولاً)
+   ========================================================================== */
+.screen-board {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: stretch;
+  background: var(--accent-gold-light);
+  border: 1.5px solid var(--accent-gold-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+.screen-board-rail {
+  flex-shrink: 0;
+  width: 34px;
+  background-color: var(--primary-brown);
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.14) 0,
+      rgba(255, 255, 255, 0.14) 2px,
+      transparent 2px,
+      transparent 12px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.14) 0,
+      rgba(255, 255, 255, 0.14) 2px,
+      transparent 2px,
+      transparent 12px
+    );
+}
+
+.screen-board-body {
+  flex: 1;
+  min-width: 0;
+  padding: 1.1rem 1.6rem 1.4rem;
+}
+
+.screen-board-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.screen-board-header img {
+  height: 62px;
+  width: auto;
+  object-fit: contain;
+}
+
+.screen-board-title {
+  flex: 1;
+  text-align: center;
+}
+
+.screen-board-title h2 {
+  font-size: 1.7rem;
+  font-weight: 900;
+  color: var(--primary-brown);
+  margin: 0;
+}
+
+.screen-board-title p {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--accent-plum);
+  margin: 0.25rem 0 0;
+}
+
+.screen-board-period {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--primary-dark);
+  text-decoration: underline;
+  text-decoration-color: var(--accent-gold);
+  margin: 0.55rem 0 0;
+}
+
+.screen-circle-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1.4rem 1.1rem;
+}
+
+.screen-circle-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.screen-circle-title {
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: var(--primary-brown);
+  margin-bottom: 0.15rem;
+}
+
+.screen-circle-title .honorific {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-inline-start: 0.3rem;
+}
+
+.screen-rank-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  padding: 0.55rem 0.8rem;
+  font-weight: 900;
+  font-size: 0.98rem;
+  color: #ffffff;
+  text-align: center;
+}
+
+.screen-rank-bar.teal {
+  background: var(--primary-brown);
+}
+
+.screen-rank-bar.brown {
+  background: var(--accent-plum);
+}
+
+.screen-rank-bar.teal.trophy {
+  background: var(--primary-dark);
+  box-shadow: inset 0 0 0 2px var(--accent-gold);
+}
+
+.screen-rank-bar.brown.trophy {
+  background: var(--accent-plum-dark);
+  box-shadow: inset 0 0 0 2px var(--accent-gold);
+}
+
+.screen-pill {
+  border-radius: 999px;
+  padding: 0.5rem 0.8rem;
+  font-weight: 700;
+  font-size: 0.92rem;
+  text-align: center;
+  border: 1.5px solid transparent;
+}
+
+.screen-pill.gray {
+  background: var(--slate-light);
+  color: var(--text-muted);
+  border-color: var(--border-color);
+}
+
+.screen-pill.tan {
+  background: var(--accent-plum-light);
+  color: var(--accent-plum);
+  border-color: var(--accent-gold-border);
+}
+
+.screen-pill .rank-num {
+  font-weight: 900;
+  margin-inline-end: 0.35rem;
+}
+
+.screen-board-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.3rem;
+  padding-top: 0.7rem;
+  border-top: 1.5px solid var(--accent-gold-border);
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--accent-plum);
+}
+
+.screen-board-footer span:last-child {
+  color: var(--primary-brown);
 }
 
 @media (max-width: 992px) {
@@ -1104,6 +1395,9 @@ body {
 .print-official-header {
   display: none;
 }
+.print-official-footer {
+  display: none;
+}
 .print-report-footer {
   display: none !important;
 }
@@ -1140,6 +1434,7 @@ body {
   #view-teacher-notes:not(.print-active),
   #view-accounts:not(.print-active),
   #view-screen:not(.print-active),
+  #view-tests:not(.print-active),
   #view-notifications:not(.print-active),
   #view-settings:not(.print-active) {
     display: none !important;
@@ -1209,6 +1504,12 @@ body {
     width: auto !important;
     object-fit: contain !important;
     background: transparent !important;
+  }
+
+  .print-official-footer {
+    display: block !important;
+    width: 100% !important;
+    page-break-inside: avoid !important;
   }
 
   .print-header-title-box {
