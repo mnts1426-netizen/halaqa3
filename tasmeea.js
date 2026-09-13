@@ -216,26 +216,15 @@ function buildStudentAccordionCard(
     "nextTilawa",
   );
 
-  // قائمة التحضير السريع: المعلمة تقتصر على (حاضرة/متأخرة) فقط، بينما يبقى
-  // تسجيل (غائبة/مستأذنة) بيد المديرة حصراً لضبط دقة سجلات الغياب الرسمية
-  let quickAttOptions = "";
-  if (isTeacher) {
-    quickAttOptions = `
-      <option value="" ${currentAtt === "" ? "selected" : ""}>— غير محدد —</option>
-      <option value="present" ${currentAtt === "present" ? "selected" : ""}>🟢 حاضرة</option>
-      <option value="late" ${currentAtt === "late" ? "selected" : ""}>🟡 متأخرة</option>
-      ${currentAtt === "absent" ? '<option value="absent" selected disabled>🔴 غائبة (تلقائي)</option>' : ""}
-      ${currentAtt === "excused" ? '<option value="excused" selected disabled>🔵 مستأذنة (إدارة)</option>' : ""}
-    `;
-  } else {
-    quickAttOptions = `
+  // قائمة التحضير السريع: نفس الخيارات الأربعة كاملة للمعلمة والمديرة معاً
+  // (حاضرة/غائبة/متأخرة/مستأذنة) بدون أي تفريق في الصلاحية بينهما
+  const quickAttOptions = `
       <option value="" ${currentAtt === "" ? "selected" : ""}>— غير محدد —</option>
       <option value="present" ${currentAtt === "present" ? "selected" : ""}>🟢 حاضرة</option>
       <option value="absent" ${currentAtt === "absent" ? "selected" : ""}>🔴 غائبة</option>
       <option value="late" ${currentAtt === "late" ? "selected" : ""}>🟡 متأخرة</option>
       <option value="excused" ${currentAtt === "excused" ? "selected" : ""}>🔵 مستأذنة</option>
     `;
-  }
 
   return `
     <div class="card mb-3" style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden;" id="tasmeea-card-${student.id}">
@@ -380,14 +369,6 @@ function saveQuickAttendance(studentId, status) {
   const user = window.currentUser;
   const isTeacher = user && user.role === "teacher";
   const isAdmin = user && user.role === "admin";
-
-  if (isTeacher && status !== "present" && status !== "late" && status !== "") {
-    alert(
-      "⚠️ غير مصرح للمعلمة باختيار هذه الحالة. التعديلات محصورة بإدارة الدار.",
-    );
-    renderTasmeeaStudents();
-    return;
-  }
 
   const recordId = `att_${studentId}_${dateVal}`;
   if (!window.appStore.attendance) window.appStore.attendance = [];
