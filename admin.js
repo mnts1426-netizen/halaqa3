@@ -306,6 +306,7 @@ window.buildOfficialPrintChrome = function (
     <div style="display: flex; justify-content: space-between; align-items: center;">
       <div style="width: 130px; text-align: right;">
         <img src="report_logo_right.png" alt="شعار الدار" style="height: 70px; width: auto; object-fit: contain;" />
+        <div style="font-size: 0.6rem; font-weight: 800; color: #6b21a8; margin-top: 2px;">${orgName}</div>
       </div>
       <div style="text-align: center; flex: 1;">
         <h2 style="margin: 3px 0; font-size: 1.35rem; font-weight: 900; color: #6b21a8; font-family: 'Amiri', 'Cairo', serif;">${orgName}</h2>
@@ -326,7 +327,7 @@ window.buildOfficialPrintChrome = function (
         </div>
         ${centerSubHtml ? `<div style="margin-top: 4px; font-weight: 800; color: #86198f; font-size: 0.78rem; white-space: nowrap;">${centerSubHtml}</div>` : ""}
       </div>
-      <div style="text-align: left; min-width: 90px;">
+      <div style="text-align: left; min-width: 90px; margin-left: 1.25rem;">
         ${
           leftSubText
             ? `<div style="font-weight:800; color:#86198f; font-size:0.78rem; white-space: nowrap;">${leftSubText}</div>`
@@ -827,7 +828,7 @@ window.openDashboardDetailsModal = function (type) {
       html += `
         <tr>
           <td style="text-align: center;">${idx + 1}</td>
-          <td style="font-weight: 700;">${s.name}</td>
+          <td style="font-weight: 700;">${escapeHtml(s.name)}</td>
           <td>${s.nationalId || "—"}</td>
           <td>${s.parentPhone || s.phone || "—"}</td>
           <td>${circle ? circle.name : "غير مسجلة"}</td>
@@ -864,7 +865,7 @@ window.openDashboardDetailsModal = function (type) {
       html += `
         <tr>
           <td style="text-align: center;">${idx + 1}</td>
-          <td style="font-weight: 700;">${t.name}</td>
+          <td style="font-weight: 700;">${escapeHtml(t.name)}</td>
           <td>${t.phone || "—"}</td>
           <td>${circleNames}</td>
           <td dir="ltr" style="text-align: right;">${t.lastLogin || "لم تدخل بعد"}</td>
@@ -901,7 +902,7 @@ window.openDashboardDetailsModal = function (type) {
       html += `
         <tr>
           <td style="text-align: center;">${idx + 1}</td>
-          <td style="font-weight: 700;">${c.name}</td>
+          <td style="font-weight: 700;">${escapeHtml(c.name)}</td>
           <td>${teacherNames}</td>
           <td style="text-align: center; font-weight: 800;">${stuCount}</td>
           <td><span class="badge badge-active">${c.status || "نشطة"}</span></td>
@@ -1247,7 +1248,7 @@ window.renderCirclesCards = function () {
       <div class="circle-card" style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 10px; padding: 1.25rem;">
         <div class="circle-header flex-between mb-2">
           <div class="circle-title">
-            <h3 style="font-size: 1.15rem; font-weight: 800; color: var(--primary-brown); margin-bottom: 2px;">${circle.name}</h3>
+            <h3 style="font-size: 1.15rem; font-weight: 800; color: var(--primary-brown); margin-bottom: 2px;">${escapeHtml(circle.name)}</h3>
             <p class="text-muted" style="font-size: 0.82rem; margin: 0;">جامع الهدى</p>
           </div>
           <span class="badge badge-active">${circle.status || "نشطة"}</span>
@@ -1347,7 +1348,7 @@ window.populateCircleTeachersList = function (selectedIds = []) {
     html += `
       <label class="checkbox-item-row p-1 mb-1" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.88rem;">
         <input type="checkbox" name="circle_teachers" value="${t.id}" ${isChecked}>
-        <span>${t.name}</span>
+        <span>${escapeHtml(t.name)}</span>
       </label>
     `;
   });
@@ -1373,7 +1374,7 @@ window.populateCircleStudentsList = function (selectedStudentIds = []) {
     html += `
       <label class="checkbox-item-row p-1 mb-1" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.88rem;">
         <input type="checkbox" name="circle_students" value="${s.id}" ${isChecked}>
-        <span>${s.name}</span>
+        <span>${escapeHtml(s.name)}</span>
       </label>
     `;
   });
@@ -1588,7 +1589,7 @@ window.renderTeachersTable = function () {
 
     html += `
       <tr>
-        <td style="font-weight: 700;">${t.name} ${financeBadge}</td>
+        <td style="font-weight: 700;">${escapeHtml(t.name)} ${financeBadge}</td>
         <td>${t.phone || "—"}</td>
         <td><span style="font-weight: 600; color: var(--text-dark);">${circleNamesStr}</span></td>
         <td dir="ltr" class="text-muted" style="text-align: right;">${t.lastLogin || "لم تدخل بعد"}</td>
@@ -1625,7 +1626,7 @@ window.openModalAddTeacher = function () {
       html += `
         <label class="checkbox-item-row p-1 mb-1" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.88rem;">
           <input type="checkbox" name="teacher_circles" value="${c.id}">
-          <span>${c.name}</span>
+          <span>${escapeHtml(c.name)}</span>
         </label>
       `;
     });
@@ -1756,7 +1757,7 @@ window.openModalEditTeacher = function (teacherId) {
       html += `
         <label class="checkbox-item-row p-1 mb-1" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.88rem;">
           <input type="checkbox" name="edit_teacher_circles" value="${c.id}" ${isChecked}>
-          <span>${c.name}</span>
+          <span>${escapeHtml(c.name)}</span>
         </label>
       `;
     });
@@ -1959,7 +1960,7 @@ window.renderTeachersAttendanceTable = function () {
     html += `
       <tr>
         <td style="text-align: center;">${idx + 1}</td>
-        <td style="font-weight: 700;">${t.name}</td>
+        <td style="font-weight: 700;">${escapeHtml(t.name)}</td>
         <td>${t.phone || "—"}</td>
         <td><span style="font-weight: 600; color: var(--text-dark);">${circleNames}</span></td>
         <td>${record.time ? `🕒 ${record.time}` : '<span class="text-muted">لم تحضر ذاتياً</span>'}</td>
@@ -2112,7 +2113,7 @@ window.renderStudentsTable = function () {
         <td style="text-align: center;">
           <input type="checkbox" class="student-row-cb" value="${s.id}" onchange="handleStudentRowSelectionChange()">
         </td>
-        <td style="font-weight: 700;">${s.name}</td>
+        <td style="font-weight: 700;">${escapeHtml(s.name)}</td>
         <td>${s.nationalId || "—"}</td>
         <td>${s.phone || "—"}</td>
         <td>${s.parentName || "—"}</td>
@@ -2620,7 +2621,7 @@ window.renderAccountsTable = function () {
     html += `
       <tr>
         <td style="text-align: center;">${idx + 1}</td>
-        <td style="font-weight: 700;">${u.name}</td>
+        <td style="font-weight: 700;">${escapeHtml(u.name)}</td>
         <td>${roleBadge}</td>
         <td><code>${u.username}</code></td>
         <td><span class="badge ${isActive ? "badge-active" : "badge-danger"}">${isActive ? "نشطة" : "موقوفة"}</span></td>
@@ -2884,7 +2885,7 @@ window.renderAttendanceTable = function () {
 
     html += `
       <tr>
-        <td style="font-weight: 700;">${s.name}</td>
+        <td style="font-weight: 700;">${escapeHtml(s.name)}</td>
         <td>${getCircleName(s.circleId)}</td>
         <td>
           <select class="form-control" style="font-weight: 700;" onchange="setStudentAttendance('${s.id}', this.value)">
@@ -2909,6 +2910,8 @@ window.setStudentAttendance = function (studentId, status) {
   const dateVal = document.getElementById("attendance-date-select")?.value;
   const circleId = document.getElementById("attendance-circle-select")?.value;
   const recordId = `att_${studentId}_${dateVal}`;
+  const currentUser = window.currentUser;
+  const isTeacher = currentUser && currentUser.role === "teacher";
 
   if (!window.appStore.attendance) window.appStore.attendance = [];
   let record = window.appStore.attendance.find((a) => a.id === recordId);
@@ -2931,6 +2934,28 @@ window.setStudentAttendance = function (studentId, status) {
   if (typeof saveToCloud === "function")
     saveToCloud("attendance", record.id, record);
   if (typeof saveLocalStore === "function") saveLocalStore();
+
+  // توثيق حركة تحضير المعلمة في سجل العمليات (كما هو مطبّق في شاشة التسميع)
+  if (isTeacher && typeof window.logTeacherActivity === "function") {
+    const student = (window.appStore?.students || []).find(
+      (s) => s.id === studentId,
+    );
+    const stuName = student ? student.name : "طالبة";
+    const statusText =
+      status === "present"
+        ? "حاضرة 🟢"
+        : status === "late"
+          ? "متأخرة 🟡"
+          : status === "absent"
+            ? "غائبة 🔴"
+            : "إلغاء التحضير";
+    window.logTeacherActivity(
+      "تحضير طالبة",
+      `رصد حالة الطالبة (${stuName}) كـ (${statusText})`,
+      currentUser.name,
+      getCircleName(circleId),
+    );
+  }
 };
 
 window.updateAttendanceNotes = function (studentId, notesVal) {
@@ -3026,7 +3051,7 @@ window.renderTeacherNotesTable = function () {
         <td style="font-weight: 700;">${teacherName}</td>
         <td><span style="font-weight: 600; color: var(--text-dark);">${circle ? circle.name : "—"}</span></td>
         <td style="font-weight: 700; color: var(--primary-brown);">${student ? student.name : "طالبة"}</td>
-        <td style="white-space: normal; line-height: 1.6;">${t.adminNotes}</td>
+        <td style="white-space: normal; line-height: 1.6;">${escapeHtml(t.adminNotes)}</td>
       </tr>
     `;
   });
@@ -3308,7 +3333,7 @@ window.renderTamayuzBoard = function () {
 
     html += `
       <tr>
-        <td style="font-weight: 800;">${isFirst ? "🏆 " : "⭐ "}${stu.name}</td>
+        <td style="font-weight: 800;">${isFirst ? "🏆 " : "⭐ "}${escapeHtml(stu.name)}</td>
         <td><span style="font-weight: 600; color: var(--text-dark);">${circleName}</span></td>
         <td><span class="badge badge-active">100% (حضور 4 / 4 أيام)</span></td>
         <td><span class="badge badge-active">متقنة (ممتاز)</span></td>
@@ -3773,7 +3798,7 @@ window.renderPendingRequestsTable = function () {
   pendingList.forEach((stu) => {
     html += `
       <tr>
-        <td style="font-weight: 700;">${stu.name}</td>
+        <td style="font-weight: 700;">${escapeHtml(stu.name)}</td>
         <td>${stu.nationalId || "—"}</td>
         <td>${stu.hifzAmount || "—"}</td>
         <td>${stu.parentName || "—"}</td>
@@ -3945,7 +3970,7 @@ window.handleRecipientTypeChange = function (selectEl) {
 
     let opts = '<option value="">— اختاري المعلمة —</option>';
     (window.appStore?.teachers || []).forEach((t) => {
-      opts += `<option value="${t.id}" data-name="${t.name}">${t.name}</option>`;
+      opts += `<option value="${t.id}" data-name="${escapeHtml(t.name)}">${escapeHtml(t.name)}</option>`;
     });
     specificSelect.innerHTML = opts;
   } else if (type === "specific_student") {
@@ -3957,7 +3982,7 @@ window.handleRecipientTypeChange = function (selectEl) {
     (window.appStore?.students || [])
       .filter((s) => s.status === "active")
       .forEach((s) => {
-        opts += `<option value="${s.id}" data-name="${s.name}">${s.name} (${getCircleName(s.circleId)})</option>`;
+        opts += `<option value="${s.id}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)} (${getCircleName(s.circleId)})</option>`;
       });
     specificSelect.innerHTML = opts;
   } else {

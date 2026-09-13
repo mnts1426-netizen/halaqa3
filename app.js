@@ -825,6 +825,13 @@ function adjustSidebarAndViewsForRole(role) {
       document.querySelectorAll(".sidebar .nav-teacher-only").forEach((el) => {
         el.style.display = "none";
       });
+      // إظهار رابط التسميع للمديرة أيضاً رغم تصنيفه (خاص بالمعلمات) - لتتمكن من
+      // تسجيل التسميع بنفسها لأي حلقة عند الحاجة
+      document
+        .querySelectorAll('.sidebar .nav-link[data-target="view-tasmeea"]')
+        .forEach((el) => {
+          el.style.display = "flex";
+        });
       const financeNav = document.getElementById("nav-finance-link");
       if (financeNav) financeNav.style.display = "flex";
     }
@@ -1532,7 +1539,7 @@ function renderStudentData() {
                 : (student.name ? student.name.charAt(0) : "؟")
             }
           </div>
-          <h2 style="font-size: 1.4rem; font-weight: 900; margin-bottom: 4px;">${student.name}</h2>
+          <h2 style="font-size: 1.4rem; font-weight: 900; margin-bottom: 4px;">${escapeHtml(student.name)}</h2>
           <p style="font-size: 0.95rem; opacity: 0.9; margin-bottom: 8px;">دار المُهتدية النسائية — جامع الهدى</p>
           <span style="background: rgba(255, 255, 255, 0.2); padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 700;">
             🌸 حلقة: ${circleName}
@@ -1826,6 +1833,9 @@ function refreshAllViews() {
 
 function refreshActiveView(viewId) {
   try {
+    if (typeof window.refreshOnDemandCollections === "function") {
+      window.refreshOnDemandCollections(viewId);
+    }
     updateCircleDropdowns();
     applyAppIdentity();
     syncHeaderDateTime();
@@ -2138,7 +2148,7 @@ window.openTasmeeaDetailsModal = function (type) {
       html += `
         <tr>
           <td style="text-align: center;">${idx + 1}</td>
-          <td style="font-weight: 700;">${s.name}</td>
+          <td style="font-weight: 700;">${escapeHtml(s.name)}</td>
           <td><span style="font-weight: 600; color: var(--text-dark);">${circleName}</span></td>
           <td>${statusBadge}</td>
           <td>${tasm.hifzSurah || "—"}</td>
@@ -2244,8 +2254,8 @@ function renderNotificationsView() {
     .map(
       (n) => `
       <div class="notification-item-card mb-2 p-3" style="background: #faf5ff; border: 1px solid var(--border-color); border-radius: 8px;">
-        <h4 style="font-weight: 800; color: var(--primary-brown); margin-bottom: 4px;">${n.title}</h4>
-        <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 6px;">${n.body}</p>
+        <h4 style="font-weight: 800; color: var(--primary-brown); margin-bottom: 4px;">${escapeHtml(n.title)}</h4>
+        <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 6px;">${escapeHtml(n.body)}</p>
         <div class="flex-between" style="font-size: 0.75rem; color: #888;">
           <span>من: ${n.sender || "إدارة الدار"}</span>
           <span>${n.date || ""}</span>

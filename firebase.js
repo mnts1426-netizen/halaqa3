@@ -479,7 +479,7 @@ function watchForAppUpdates() {
 // باستمرار مع الوقت). التاريخ الأقدم يبقى محفوظاً بأمان في Firestore
 // ويُجلب عند الطلب فقط عبر ensureFullAttendanceTasmeeaHistory أدناه
 // (تستخدمها صفحة التقارير عند الحاجة الفعلية لفترات أقدم).
-const RECENT_SYNC_DAYS = 45;
+const RECENT_SYNC_DAYS = 30;
 
 function getRecentSyncCutoffDate(daysBack) {
   const d = new Date();
@@ -496,6 +496,12 @@ function setupRealtimeCloudSync() {
   // مزامنته اللحظية الكاملة كانت تستهلك قراءات دون أي استخدام فعلي.
   // الكتابة إلى logs عبر addSystemLog تبقى تماماً كما هي، والسجل الكامل
   // يبقى محفوظاً بأمان في Firestore ويمكن مراجعته منه مباشرة كالمعتاد.
+  //
+  // كذلك "tests" / "teacherLogs" / "financeRevenues" / "financeExpenses" /
+  // "payroll" غير موجودة هنا عمداً أيضاً: لا تحتاج مزامنة لحظية دائمة لأنها
+  // نادراً ما تتغيّر من مستخدمة أخرى بنفس اللحظة، فتُجلب عند الحاجة الفعلية
+  // فقط (عند فتح شاشتها) عبر refreshOnDemandCollections أدناه، بدل إبقاء
+  // اتصال مفتوح عليها طوال الجلسة.
   const allCollections = [
     "users",
     "students",
@@ -504,15 +510,10 @@ function setupRealtimeCloudSync() {
     "attendance",
     "teacherAttendance",
     "tasmeea",
-    "tests",
     "notifications",
     "messages",
     "screenOrder",
     "settings",
-    "teacherLogs",
-    "financeRevenues",
-    "financeExpenses",
-    "payroll",
   ];
 
   // مجموعتا الحضور والتسميع فقط تُقيَّدان بنافذة زمنية حديثة، لأنهما
@@ -579,12 +580,24 @@ function setupRealtimeCloudSync() {
 // التقارير عند طلب فترة أقدم من النافذة اللحظية المحدودة أعلاه).
 // هذه قراءة واحدة (get) وليست استماعاً دائماً، فلا تتكرر تلقائياً،
 // وتُستبدل بها بيانات appStore مؤقتاً بالنسخة الكاملة لهذه الجلسة فقط.
-window.ensureFullAttendanceTasmeeaHistory = async function () {
+// sinceDate اختياري (YYYY-MM-DD): إن مُرِّر، تُجلب السجلات من هذا التاريخ فقط
+// بدل كامل التاريخ منذ إنشاء الدار - يقلل القراءات كثيراً مع تراكم السنوات،
+// طالما التقرير المطلوب فعلياً لا يحتاج تاريخاً أقدم منه. بدون تمرير القيمة
+// يبقى السلوك القديم (جلب كل شيء) كما هو تماماً لضمان عدم كسر أي استدعاء آخر.
+window.ensureFullAttendanceTasmeeaHistory = async function (sinceDate) {
   if (!dbFirestore) return;
   try {
+    const attCol = dbFirestore.collection("attendance");
+    const tasmCol = dbFirestore.collection("tasmeea");
+    const attQuery = sinceDate
+      ? attCol.where("date", ">=", sinceDate)
+      : attCol;
+    const tasmQuery = sinceDate
+      ? tasmCol.where("date", ">=", sinceDate)
+      : tasmCol;
     const [attSnap, tasmSnap] = await Promise.all([
-      dbFirestore.collection("attendance").get(),
-      dbFirestore.collection("tasmeea").get(),
+      attQuery.get(),
+      tasmQuery.get(),
     ]);
     window.appStore.attendance = attSnap.docs.map((doc) => ({
       id: doc.id,
@@ -597,6 +610,50 @@ window.ensureFullAttendanceTasmeeaHistory = async function () {
     saveLocalStore();
   } catch (e) {
     console.warn("تعذر جلب التاريخ الكامل لأغراض التقارير:", e);
+  }
+};
+
+// المجموعات التي لا تُزامَن لحظياً بشكل دائم (راجع setupRealtimeCloudSync)
+// وتُجلب فقط عند فتح شاشتها الفعلية، مع الدالة التي تُعيد رسم كل شاشة بعد الجلب
+const ON_DEMAND_COLLECTIONS = {
+  "view-tests": ["tests"],
+  "view-finance": ["financeRevenues", "financeExpenses", "payroll"],
+  "view-dashboard": ["teacherLogs"],
+};
+const ON_DEMAND_RENDER = {
+  "view-tests": () => {
+    if (typeof renderTestsTable === "function") renderTestsTable();
+  },
+  "view-finance": () => {
+    if (typeof renderFinanceReports === "function") renderFinanceReports();
+  },
+  "view-dashboard": () => {
+    if (typeof renderTeacherLogsTable === "function") renderTeacherLogsTable();
+  },
+};
+
+// تجلب مجموعات (tests/teacherLogs/finance...) عند فتح شاشتها فقط بدل إبقائها
+// مُزامَنة لحظياً طوال الجلسة - قراءة واحدة (get) عند كل زيارة للشاشة، وليست
+// استماعاً دائماً. تُستدعى من refreshActiveView في app.js دون أن تحجب عرض
+// البيانات الموجودة أصلاً (تُعيد الرسم فقط بعد اكتمال الجلب).
+window.refreshOnDemandCollections = async function (viewId) {
+  const names = ON_DEMAND_COLLECTIONS[viewId];
+  if (!dbFirestore || !names) return;
+  try {
+    const snaps = await Promise.all(
+      names.map((name) => dbFirestore.collection(name).get()),
+    );
+    snaps.forEach((snap, idx) => {
+      window.appStore[names[idx]] = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+    });
+    saveLocalStore();
+    const rerender = ON_DEMAND_RENDER[viewId];
+    if (rerender) rerender();
+  } catch (e) {
+    console.warn(`تعذر تحديث بيانات (${viewId}) عند الطلب:`, e);
   }
 };
 

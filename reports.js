@@ -228,16 +228,6 @@ async function generateReport() {
   const thead = document.getElementById("report-thead");
   const tbody = document.getElementById("report-tbody");
 
-  // التقارير قد تحتاج تاريخاً أقدم من نافذة المزامنة اللحظية المحدودة،
-  // لذا نجلب كامل تاريخ الحضور والتسميع مرة واحدة عند الطلب هنا فقط.
-  if (typeof window.ensureFullAttendanceTasmeeaHistory === "function") {
-    if (tbody) {
-      tbody.innerHTML =
-        '<tr><td colspan="8" class="text-center text-muted p-4">جاري تحميل بيانات التقرير...</td></tr>';
-    }
-    await window.ensureFullAttendanceTasmeeaHistory();
-  }
-
   const reportType = document.getElementById("report-type-select")?.value;
   const selectedStudentId =
     document.getElementById("report-student-select")?.value || "all";
@@ -252,6 +242,29 @@ async function generateReport() {
   const weekTo =
     document.getElementById("report-week-to")?.value ||
     String(currentTamayuzWeekNum);
+
+  // التقارير قد تحتاج تاريخاً أقدم من نافذة المزامنة اللحظية المحدودة، لذا نجلب
+  // تاريخ الحضور والتسميع مرة واحدة عند الطلب هنا فقط - لكن بدءاً من أقدم تاريخ
+  // يحتاجه التقرير المطلوب فعلياً (وليس كل التاريخ منذ إنشاء الدار)، لتقليل
+  // القراءات مع تراكم السنوات. إن لم يُحدَّد أي تاريخ (تقرير "كامل الفترة")
+  // يبقى الجلب الكامل كما كان تماماً حفاظاً على نفس السلوك المعتاد.
+  let reportSinceDate = dateFrom || null;
+  if (!reportSinceDate && reportType === "tamayuz") {
+    const weekFromNum = parseInt(weekFrom, 10);
+    if (!isNaN(weekFromNum)) {
+      reportSinceDate = toLocalDateStr(getSundayDateForWeekNumber(weekFromNum));
+    }
+  } else if (!reportSinceDate && reportType === "student_daily") {
+    reportSinceDate = "2026-08-30";
+  }
+
+  if (typeof window.ensureFullAttendanceTasmeeaHistory === "function") {
+    if (tbody) {
+      tbody.innerHTML =
+        '<tr><td colspan="8" class="text-center text-muted p-4">جاري تحميل بيانات التقرير...</td></tr>';
+    }
+    await window.ensureFullAttendanceTasmeeaHistory(reportSinceDate);
+  }
 
   const printTitle = document.getElementById("print-report-title");
   const printPeriod = document.getElementById("print-report-period");
