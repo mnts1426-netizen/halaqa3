@@ -76,6 +76,96 @@ window.getCarriedForwardLessonValue = function (
 };
 
 // عرض قائمة طالبات الحلقة مع إتاحة الوصول الكامل للمديرة وعزل المعلمة
+// ==========================================================================
+// حفظ حالة الشاشة عند إعادة الرسم: كل إعادة رسم لقائمة الطلاب (بعد انتهاء المزامنة
+// السحابية، أو بعد اعتماد قسم، أو بعد تحضير طالب آخر) كانت تستبدل المحتوى كاملاً فتُغلق
+// البطاقات المفتوحة وتُمسح كل حقول المعلم المكتوبة التي لم تُعتمد بعد، فيضطر لإعادة
+// كتابتها واعتمادها مرة ثانية. هذه الدوال تلتقط الحقول المعدَّلة فعلاً (وليس المحفوظة) مع
+// البطاقات المفتوحة والتركيز ثم تعيدها بعد الرسم.
+// ==========================================================================
+function isFormFieldEdited(el) {
+  if (el.tagName === "SELECT") {
+    let defaultIdx = [...el.options].findIndex((o) => o.defaultSelected);
+    if (defaultIdx < 0) defaultIdx = 0;
+    return el.selectedIndex !== defaultIdx;
+  }
+  return el.value !== el.defaultValue;
+}
+
+// بعد حفظ حقول (أو إلغاء اعتمادها) تُعدّ قيمها الحالية "محفوظة" فلا تُستعاد كأنها
+// كتابة غير محفوظة عند إعادة الرسم التالية
+function markTasmeeaFieldsClean(studentId, names) {
+  const details = document.getElementById(`tasmeea-details-${studentId}`);
+  if (!details) return;
+  details.querySelectorAll("input[name], select[name]").forEach((el) => {
+    if (names && !names.includes(el.name)) return;
+    if (el.tagName === "SELECT") {
+      [...el.options].forEach((o) => {
+        o.defaultSelected = o.selected;
+      });
+    } else {
+      el.defaultValue = el.value;
+    }
+  });
+}
+
+function captureTasmeeaUiState(container, renderKey) {
+  if (!container || container.dataset.renderKey !== renderKey) return null;
+  const state = { open: [], fields: {}, focus: null };
+  container.querySelectorAll('[id^="tasmeea-details-"]').forEach((details) => {
+    const sid = details.id.replace("tasmeea-details-", "");
+    if (details.style.display === "block") state.open.push(sid);
+    details.querySelectorAll("input[name], select[name]").forEach((el) => {
+      if (isFormFieldEdited(el)) state.fields[`${sid}|${el.name}`] = el.value;
+    });
+  });
+  const active = document.activeElement;
+  if (active && active.name && container.contains(active)) {
+    const details = active.closest('[id^="tasmeea-details-"]');
+    if (details) {
+      state.focus = {
+        key: `${details.id.replace("tasmeea-details-", "")}|${active.name}`,
+        start: active.selectionStart,
+        end: active.selectionEnd,
+      };
+    }
+  }
+  return state;
+}
+
+function restoreTasmeeaUiState(container, state) {
+  if (!container || !state) return;
+  const findField = (key) => {
+    const sep = key.indexOf("|");
+    const details = document.getElementById(
+      `tasmeea-details-${key.slice(0, sep)}`,
+    );
+    return details
+      ? details.querySelector(`[name="${key.slice(sep + 1)}"]`)
+      : null;
+  };
+  state.open.forEach((sid) => {
+    const details = document.getElementById(`tasmeea-details-${sid}`);
+    if (details) details.style.display = "block";
+    const arrow = document.getElementById(`tasmeea-arrow-${sid}`);
+    if (arrow) arrow.textContent = "▲";
+  });
+  Object.entries(state.fields).forEach(([key, value]) => {
+    const el = findField(key);
+    if (el) el.value = value;
+  });
+  if (state.focus) {
+    const el = findField(state.focus.key);
+    if (el) {
+      el.focus({ preventScroll: true });
+      try {
+        if (state.focus.start !== null && state.focus.start !== undefined)
+          el.setSelectionRange(state.focus.start, state.focus.end);
+      } catch (e) {}
+    }
+  }
+}
+
 function renderTasmeeaStudents() {
   const circleId = document.getElementById("tasmeea-circle-select")?.value;
   const dateVal = document.getElementById("tasmeea-date-select")?.value;
@@ -164,7 +254,11 @@ function renderTasmeeaStudents() {
     );
   });
 
+  const tasmeeaRenderKey = `${circleId}|${dateVal}`;
+  const savedUiState = captureTasmeeaUiState(container, tasmeeaRenderKey);
   container.innerHTML = html;
+  container.dataset.renderKey = tasmeeaRenderKey;
+  restoreTasmeeaUiState(container, savedUiState);
 }
 
 // بناء بطاقة الطالبة المنسدلة
@@ -551,6 +645,11 @@ function saveTasmeeaSection(studentId, section) {
     );
   }
 
+  markTasmeeaFieldsClean(studentId, [
+    cfg.surahField,
+    cfg.ratingField,
+    cfg.nextField,
+  ]);
   alert(`✅ تم اعتماد (${cfg.label}) لليوم والغد بنجاح!`);
   renderTasmeeaStudents();
 }
@@ -611,6 +710,11 @@ function cancelTasmeeaSection(studentId, section) {
     );
   }
 
+  markTasmeeaFieldsClean(studentId, [
+    `${section}_surah`,
+    `${section}_rating`,
+    `next_${section}`,
+  ]);
   alert(`↩️ تم إلغاء اعتماد (${cfg.label}) بنجاح.`);
   renderTasmeeaStudents();
 }
@@ -734,6 +838,7 @@ function saveStudentTasmeea(e, studentId) {
     );
   }
 
+  markTasmeeaFieldsClean(studentId);
   alert("✅ تم حفظ التسميع واعتماد خطة المقررات بنجاح!");
   renderTasmeeaStudents();
 }

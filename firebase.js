@@ -122,6 +122,12 @@ async function initFirebaseApp() {
 // تحميل البيانات وربط المزامنة الفورية وترحيل البيانات للسحابة مرة واحدة فقط
 function loadInitialData() {
   const localData = localStorage.getItem(STORAGE_KEY);
+  if (!localData) {
+    wClearSyncState();
+    try {
+      localStorage.removeItem("HALAQAT_W_ONDEMAND_CURSORS_V1");
+    } catch (e) {}
+  }
   if (localData) {
     try {
       const parsedData = JSON.parse(localData);
@@ -304,8 +310,12 @@ function migrateAllPasswordsRoleBased() {
 function saveLocalStore() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(window.appStore));
+    return true;
   } catch (e) {
     console.error("فشل حفظ البيانات في LocalStorage:", e);
+    // النسخة المحلية لم تعد مطابقة للمؤشرات: الفتح القادم يحمّل كل شيء من جديد
+    wClearSyncState();
+    return false;
   }
 }
 
@@ -446,7 +456,7 @@ window.autoMigrateLocalDataToCloud = async function () {
 // meta/appVersion على Firestore ليطابق نفس القيمة. عندها أي جهاز
 // يشغّل نسخة قديمة سيكتشف ذلك فوراً (بدون انتظار) ويُعيد تحميل
 // الصفحة تلقائياً، فيحصل على آخر إصلاحات الكود دون أي تدخل يدوي.
-const APP_BUILD_VERSION = "2026-08-31-3";
+const APP_BUILD_VERSION = "2026-10-19-1";
 
 function watchForAppUpdates() {
   if (!dbFirestore) return;
@@ -458,7 +468,9 @@ function watchForAppUpdates() {
         (doc) => {
           if (!doc.exists) return;
           const latest = doc.data().latest;
-          if (latest && latest !== APP_BUILD_VERSION) {
+          // يُعاد التحميل فقط إذا كان المنشور أحدث من هذه النسخة (الصيغة تاريخية فالمقارنة
+          // النصية تكفي)، فلا تدخل النسخة الجديدة في إعادة تحميل متكررة قبل تحديث المستند
+          if (latest && String(latest) > APP_BUILD_VERSION) {
             console.warn(
               "⚠️ يوجد إصدار أحدث من التطبيق، سيتم تحديث الصفحة تلقائياً...",
             );
@@ -487,9 +499,10 @@ function getRecentSyncCutoffDate(daysBack) {
   return d.toISOString().split("T")[0];
 }
 
-function setupRealtimeCloudSync() {
-  if (!dbFirestore || isSyncInitialized) return;
-  isSyncInitialized = true;
+// المزامنة السابقة كما هي تماماً (استماع لكل المستندات): تُستخدم فقط كاحتياط إذا تعذّرت
+// المزامنة بالتغييرات فقط أدناه لأي سبب
+function setupLegacyFullListeners() {
+  if (!dbFirestore) return;
 
   // ملاحظة: "logs" غير موجودة هنا عمداً. لا توجد أي شاشة في التطبيق
   // تعرض سجل العمليات (تم التأكد من ذلك في admin.js)، وبالتالي فإن
@@ -576,6 +589,325 @@ function setupRealtimeCloudSync() {
   });
 }
 
+// ==========================================================================
+// تقليل القراءات: "الاستماع للتغييرات فقط"
+// سابقاً: كل فتح للتطبيق (بعد 30 دقيقة من آخر فتح) يقرأ كل مستندات 11 مجموعة من جديد.
+// الآن: كل جهاز يحتفظ بنسخته، وبعد أول تحميل كامل يستمع فقط للمستندات التي تغيّرت بعد آخر
+// مرة (كل حفظ يضع ختم وقت من الخادم _srvAt)، مع بقاء التحديث الفوري كما هو. والحذف يُسجَّل
+// في deletedTombstones حتى يختفي المحذوف من كل الأجهزة.
+// تحميل كامل تلقائي: أول مرة على الجهاز، أو بعد مسح بياناته، أو مرة كل 7 أيام، أو بزر المديرة.
+// إن تعذّر أي شيء يرجع التطبيق تلقائياً لطريقة المزامنة السابقة كما كانت تماماً.
+// ==========================================================================
+const W_SERVER_STAMP_FIELD = "_srvAt";
+const W_SYNC_STATE_KEY = "HALAQAT_W_SYNC_STATE_V1";
+const W_FULL_SYNC_EVERY_MS = 7 * 24 * 60 * 60 * 1000;
+const W_LIVE_OVERLAP_MS = 60 * 1000;
+const W_LIVE_RESTART_MS = 2 * 60 * 60 * 1000;
+const W_LIVE_COLLECTIONS = [
+  "users",
+  "students",
+  "teachers",
+  "circles",
+  "attendance",
+  "teacherAttendance",
+  "tasmeea",
+  "notifications",
+  "messages",
+  "screenOrder",
+  "settings",
+];
+const W_DATE_SCOPED = ["attendance", "tasmeea"];
+const W_SPECIAL = ["settings", "screenOrder"];
+
+let wLiveUnsubs = [];
+let wLiveState = null;
+let wLiveRestartTimer = null;
+let wPersistTimer = null;
+let wRefreshTimer = null;
+const wSpecialTimers = {};
+
+function wReadSyncState() {
+  try {
+    const s = JSON.parse(localStorage.getItem(W_SYNC_STATE_KEY) || "null");
+    return s && s.v === 1 && s.cursors ? s : null;
+  } catch (e) {
+    return null;
+  }
+}
+function wWriteSyncState(s) {
+  try {
+    localStorage.setItem(W_SYNC_STATE_KEY, JSON.stringify(s));
+  } catch (e) {
+    wClearSyncState();
+  }
+}
+function wClearSyncState() {
+  try {
+    localStorage.removeItem(W_SYNC_STATE_KEY);
+    localStorage.removeItem("HALAQAT_W_ONDEMAND_CURSORS_V1");
+  } catch (e) {}
+}
+window.clearWomenSyncState = wClearSyncState;
+
+function wStampMillis(v) {
+  if (!v) return 0;
+  if (typeof v.toMillis === "function") return v.toMillis();
+  if (typeof v.seconds === "number")
+    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  return 0;
+}
+
+function wDocToItem(doc) {
+  const data = doc.data() || {};
+  delete data[W_SERVER_STAMP_FIELD];
+  return { id: doc.id, ...data };
+}
+
+function wIsStateUsable(state) {
+  if (!state || !state.lastFullAt || !state.cursors) return false;
+  const now = Date.now();
+  if (now - state.lastFullAt > W_FULL_SYNC_EVERY_MS) return false;
+  if (now < state.lastFullAt - 24 * 60 * 60 * 1000) return false;
+  if (typeof state.cursors.deletedTombstones !== "number") return false;
+  return W_LIVE_COLLECTIONS.every((c) => typeof state.cursors[c] === "number");
+}
+
+// بداية الفترة المحفوظة محلياً للحضور والتسميع (نفس نافذة الـ 30 يوماً السابقة)
+function wRecentCutoff() {
+  return getRecentSyncCutoffDate(RECENT_SYNC_DAYS);
+}
+
+function wApplySpecial(colName, items) {
+  if (colName === "settings") {
+    window.appStore.settings = items[0] || SAFE_DEFAULT_SETTINGS;
+    if (typeof applyAppIdentity === "function") applyAppIdentity();
+  } else if (colName === "screenOrder") {
+    window.appStore.screenOrder = items[0]?.order || [];
+    const cloudTrophyIds = items[0]?.trophyStudentIds;
+    window.appStore.trophyStudentIds = Array.isArray(cloudTrophyIds)
+      ? cloudTrophyIds
+      : items[0]?.trophyStudentId
+        ? [items[0].trophyStudentId]
+        : [];
+  }
+}
+
+// الحضور والتسميع يبقيان محلياً بنافذة آخر 30 يوماً كما كانا (لا تكبر ذاكرة الجهاز)
+// أقدم تاريخ جُلب كاملاً للتقارير في هذه الجلسة ("ALL" = كل التاريخ): يبقى محفوظاً ومحدَّثاً
+// بالتغييرات فلا تُعاد قراءته مع كل تقرير
+let wHistoryFrom = null;
+
+function wPruneDateScoped() {
+  let cutoff = wRecentCutoff();
+  if (wHistoryFrom === "ALL") return;
+  if (wHistoryFrom && wHistoryFrom < cutoff) cutoff = wHistoryFrom;
+  W_DATE_SCOPED.forEach((col) => {
+    if (Array.isArray(window.appStore[col])) {
+      window.appStore[col] = window.appStore[col].filter(
+        (it) => !it || !it.date || it.date >= cutoff,
+      );
+    }
+  });
+}
+
+function wRefreshActiveViewSoon() {
+  clearTimeout(wRefreshTimer);
+  wRefreshTimer = setTimeout(() => {
+    if (window.currentUser && typeof refreshActiveView === "function") {
+      const activeView = document.querySelector(".content-view.active")?.id;
+      if (activeView) refreshActiveView(activeView);
+    }
+  }, 400);
+}
+
+// تحميل كامل مرة واحدة (نفس ما كانت تقرؤه المزامنة السابقة)، مع حساب المؤشرات
+async function wRunFullLoad() {
+  const recentCutoffDate = wRecentCutoff();
+  const cursors = {};
+  for (const colName of W_LIVE_COLLECTIONS) {
+    const ref = W_DATE_SCOPED.includes(colName)
+      ? dbFirestore.collection(colName).where("date", ">=", recentCutoffDate)
+      : dbFirestore.collection(colName);
+    const snapshot = await ref.get();
+    let maxStamp = 0;
+    snapshot.docs.forEach((d) => {
+      const s = wStampMillis((d.data() || {})[W_SERVER_STAMP_FIELD]);
+      if (s > maxStamp) maxStamp = s;
+    });
+    cursors[colName] = maxStamp;
+    if (!snapshot.empty) {
+      const items = snapshot.docs.map(wDocToItem);
+      if (W_SPECIAL.includes(colName)) wApplySpecial(colName, items);
+      else window.appStore[colName] = items;
+    }
+  }
+  const tombSnap = await dbFirestore.collection("deletedTombstones").get();
+  let tombMax = 0;
+  tombSnap.docs.forEach((d) => {
+    const s = wStampMillis((d.data() || {})[W_SERVER_STAMP_FIELD]);
+    if (s > tombMax) tombMax = s;
+  });
+  cursors.deletedTombstones = tombMax;
+  const savedLocally = saveLocalStore();
+  const state = {
+    v: 1,
+    lastFullAt: Date.now(),
+    recentFrom: recentCutoffDate,
+    cursors,
+  };
+  if (savedLocally) wWriteSyncState(state);
+  wRefreshActiveViewSoon();
+  return state;
+}
+
+function wPersistStateSoon() {
+  clearTimeout(wPersistTimer);
+  wPersistTimer = setTimeout(() => {
+    if (!wLiveState) return;
+    if (saveLocalStore()) wWriteSyncState(wLiveState);
+  }, 2000);
+}
+
+function wHandleChanges(colName, docs) {
+  if (!wLiveState || docs.length === 0) return;
+  let cursor = wLiveState.cursors[colName] || 0;
+  docs.forEach((d) => {
+    const s = wStampMillis((d.data() || {})[W_SERVER_STAMP_FIELD]);
+    if (s > cursor) cursor = s;
+  });
+  wLiveState.cursors[colName] = cursor;
+
+  if (colName === "deletedTombstones") {
+    docs.forEach((d) => {
+      const t = d.data() || {};
+      if (!t.collection || !t.docId) return;
+      if (Array.isArray(window.appStore[t.collection])) {
+        window.appStore[t.collection] = window.appStore[t.collection].filter(
+          (it) => !(it && String(it.id) === String(t.docId)),
+        );
+      }
+    });
+  } else if (W_SPECIAL.includes(colName)) {
+    // مستند أو مستندان فقط: يُعاد قراءتهما كاملين بنفس منطق المزامنة السابقة
+    clearTimeout(wSpecialTimers[colName]);
+    wSpecialTimers[colName] = setTimeout(async () => {
+      try {
+        const snap = await dbFirestore.collection(colName).get();
+        if (!snap.empty) {
+          wApplySpecial(colName, snap.docs.map(wDocToItem));
+          saveLocalStore();
+          wRefreshActiveViewSoon();
+        }
+      } catch (e) {
+        console.warn(`تعذر تحديث (${colName}):`, e);
+      }
+    }, 1000);
+    wPersistStateSoon();
+    return;
+  } else {
+    if (!Array.isArray(window.appStore[colName])) window.appStore[colName] = [];
+    const arr = window.appStore[colName];
+    docs.forEach((d) => {
+      const item = wDocToItem(d);
+      const idx = arr.findIndex((it) => it && String(it.id) === String(item.id));
+      if (idx > -1) arr[idx] = item;
+      else arr.push(item);
+    });
+    if (W_DATE_SCOPED.includes(colName)) wPruneDateScoped();
+  }
+  wPersistStateSoon();
+  wRefreshActiveViewSoon();
+}
+
+function wStopLiveListeners() {
+  wLiveUnsubs.forEach((u) => {
+    try {
+      u();
+    } catch (e) {}
+  });
+  wLiveUnsubs = [];
+  clearTimeout(wLiveRestartTimer);
+}
+
+function wAttachLiveListeners(state) {
+  wStopLiveListeners();
+  wLiveState = state;
+  [...W_LIVE_COLLECTIONS, "deletedTombstones"].forEach((colName) => {
+    const from = firebase.firestore.Timestamp.fromMillis(
+      Math.max(0, (state.cursors[colName] || 0) - W_LIVE_OVERLAP_MS),
+    );
+    const unsub = dbFirestore
+      .collection(colName)
+      .where(W_SERVER_STAMP_FIELD, ">", from)
+      .onSnapshot(
+        (snapshot) => {
+          if (snapshot.metadata.hasPendingWrites) return;
+          const docs = snapshot
+            .docChanges()
+            .filter((ch) => ch.type !== "removed")
+            .map((ch) => ch.doc);
+          wHandleChanges(colName, docs);
+        },
+        (error) => {
+          console.warn(`تنبيه أثناء الاستماع لتغييرات (${colName}):`, error);
+        },
+      );
+    wLiveUnsubs.push(unsub);
+  });
+
+  // كل ساعتين: إعادة تهيئة بمؤشرات محدَّثة، وتحميل كامل إن حان موعده الأسبوعي
+  wLiveRestartTimer = setTimeout(async () => {
+    if (saveLocalStore()) wWriteSyncState(wLiveState);
+    await wStartCloudSync(false);
+  }, W_LIVE_RESTART_MS);
+}
+
+async function wStartCloudSync(forceFull) {
+  let state = wReadSyncState();
+  try {
+    if (forceFull || !wIsStateUsable(state)) {
+      wStopLiveListeners();
+      state = await wRunFullLoad();
+    }
+    wAttachLiveListeners(state);
+    return true;
+  } catch (e) {
+    console.warn(
+      "تعذّر تشغيل المزامنة بالتغييرات فقط، سيتم استخدام المزامنة السابقة:",
+      e,
+    );
+    wStopLiveListeners();
+    wLiveState = null;
+    setupLegacyFullListeners();
+    return false;
+  }
+}
+
+function setupRealtimeCloudSync() {
+  if (!dbFirestore || isSyncInitialized) return;
+  isSyncInitialized = true;
+  wStartCloudSync(false);
+}
+
+// زر المديرة: تحميل كامل الآن (مثل أول تشغيل على الجهاز)
+window.runManualFullSync = async function () {
+  const user = window.currentUser;
+  if (!user || user.role !== SAFE_ROLES.ADMIN || !dbFirestore) return;
+  if (
+    !confirm(
+      "سيتم تحميل كل البيانات من قاعدة البيانات الآن (مثل أول تشغيل على الجهاز).\nاستخدميها فقط إذا لاحظتِ أن بيانات لا تظهر على هذا الجهاز.\n\nمتابعة؟",
+    )
+  )
+    return;
+  const status = document.getElementById("manual-sync-status");
+  if (status) status.textContent = "جاري المزامنة الكاملة...";
+  const ok = await wStartCloudSync(true);
+  if (status)
+    status.textContent = ok
+      ? "✅ تمت المزامنة الكاملة"
+      : "⚠️ تعذّرت، تم الرجوع للمزامنة السابقة";
+};
+
 // جلب كامل تاريخ الحضور والتسميع عند الحاجة الفعلية فقط (مثلاً صفحة
 // التقارير عند طلب فترة أقدم من النافذة اللحظية المحدودة أعلاه).
 // هذه قراءة واحدة (get) وليست استماعاً دائماً، فلا تتكرر تلقائياً،
@@ -586,6 +918,19 @@ function setupRealtimeCloudSync() {
 // يبقى السلوك القديم (جلب كل شيء) كما هو تماماً لضمان عدم كسر أي استدعاء آخر.
 window.ensureFullAttendanceTasmeeaHistory = async function (sinceDate) {
   if (!dbFirestore) return;
+  // الفترة المطلوبة موجودة كاملة على الجهاز (آخر 30 يوماً ومحدَّثة بالتغييرات أولاً بأول):
+  // لا حاجة لأي قراءة من قاعدة البيانات
+  if (sinceDate && wLiveState && wLiveUnsubs.length > 0) {
+    const completeFrom =
+      wLiveState.recentFrom && wLiveState.recentFrom > wRecentCutoff()
+        ? wLiveState.recentFrom
+        : wRecentCutoff();
+    if (sinceDate >= completeFrom) return;
+    // فترة أقدم جُلبت سابقاً في هذه الجلسة وتُحدَّث بالتغييرات أولاً بأول
+    if (wHistoryFrom && (wHistoryFrom === "ALL" || sinceDate >= wHistoryFrom))
+      return;
+  }
+  if (!sinceDate && wHistoryFrom === "ALL" && wLiveUnsubs.length > 0) return;
   try {
     const attCol = dbFirestore.collection("attendance");
     const tasmCol = dbFirestore.collection("tasmeea");
@@ -607,6 +952,11 @@ window.ensureFullAttendanceTasmeeaHistory = async function (sinceDate) {
       id: doc.id,
       ...doc.data(),
     }));
+    if (wLiveUnsubs.length > 0) {
+      if (!sinceDate) wHistoryFrom = "ALL";
+      else if (wHistoryFrom !== "ALL" && (!wHistoryFrom || sinceDate < wHistoryFrom))
+        wHistoryFrom = sinceDate;
+    }
     saveLocalStore();
   } catch (e) {
     console.warn("تعذر جلب التاريخ الكامل لأغراض التقارير:", e);
@@ -618,7 +968,6 @@ window.ensureFullAttendanceTasmeeaHistory = async function (sinceDate) {
 const ON_DEMAND_COLLECTIONS = {
   "view-tests": ["tests"],
   "view-finance": ["financeRevenues", "financeExpenses", "payroll"],
-  "view-dashboard": ["teacherLogs"],
 };
 const ON_DEMAND_RENDER = {
   "view-tests": () => {
@@ -627,10 +976,12 @@ const ON_DEMAND_RENDER = {
   "view-finance": () => {
     if (typeof renderFinanceReports === "function") renderFinanceReports();
   },
-  "view-dashboard": () => {
-    if (typeof renderTeacherLogsTable === "function") renderTeacherLogsTable();
-  },
 };
+// آخر جلب لكل شاشة: إعادة رسم الشاشة بسبب تعديل وصل لا تُعيد قراءة المجموعة كاملة كل مرة
+const ON_DEMAND_LAST_FETCH = {};
+const ON_DEMAND_CURSORS_KEY = "HALAQAT_W_ONDEMAND_CURSORS_V1";
+const ON_DEMAND_FULL_EVERY_MS = 24 * 60 * 60 * 1000;
+const ON_DEMAND_MIN_INTERVAL_MS = 2 * 60 * 1000;
 
 // تجلب مجموعات (tests/teacherLogs/finance...) عند فتح شاشتها فقط بدل إبقائها
 // مُزامَنة لحظياً طوال الجلسة - قراءة واحدة (get) عند كل زيارة للشاشة، وليست
@@ -639,17 +990,69 @@ const ON_DEMAND_RENDER = {
 window.refreshOnDemandCollections = async function (viewId) {
   const names = ON_DEMAND_COLLECTIONS[viewId];
   if (!dbFirestore || !names) return;
+  if (Date.now() - (ON_DEMAND_LAST_FETCH[viewId] || 0) < ON_DEMAND_MIN_INTERVAL_MS)
+    return;
+  ON_DEMAND_LAST_FETCH[viewId] = Date.now();
   try {
-    const snaps = await Promise.all(
-      names.map((name) => dbFirestore.collection(name).get()),
+    // أول فتح (أو مرة يومياً): قراءة كاملة كما كانت. بعدها: المستندات المتغيّرة فقط منذ آخر
+    // مرة (والمحذوف يُزال تلقائياً عبر سجل الحذف في المزامنة)
+    let cursors = {};
+    try {
+      cursors = JSON.parse(localStorage.getItem(ON_DEMAND_CURSORS_KEY) || "{}") || {};
+    } catch (e) {}
+    const canUseDelta = wLiveUnsubs.length > 0;
+    const results = await Promise.all(
+      names.map(async (name) => {
+        const c = cursors[name];
+        const full =
+          !canUseDelta ||
+          !c ||
+          Date.now() - (c.fullAt || 0) > ON_DEMAND_FULL_EVERY_MS;
+        const ref = dbFirestore.collection(name);
+        const snap = full
+          ? await ref.get()
+          : await ref
+              .where(
+                W_SERVER_STAMP_FIELD,
+                ">",
+                firebase.firestore.Timestamp.fromMillis(
+                  Math.max(0, (c.srv || 0) - W_LIVE_OVERLAP_MS),
+                ),
+              )
+              .get();
+        return { name, snap, full, prev: c };
+      }),
     );
-    snaps.forEach((snap, idx) => {
-      window.appStore[names[idx]] = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+    results.forEach(({ name, snap, full, prev }) => {
+      let maxSrv = full ? 0 : (prev && prev.srv) || 0;
+      const items = snap.docs.map((doc) => {
+        const s2 = wStampMillis((doc.data() || {})[W_SERVER_STAMP_FIELD]);
+        if (s2 > maxSrv) maxSrv = s2;
+        return wDocToItem(doc);
+      });
+      if (full) {
+        window.appStore[name] = items;
+        cursors[name] = { srv: maxSrv, fullAt: Date.now() };
+      } else {
+        if (!Array.isArray(window.appStore[name])) window.appStore[name] = [];
+        const arr = window.appStore[name];
+        items.forEach((item) => {
+          const idx = arr.findIndex((it) => it && String(it.id) === String(item.id));
+          if (idx > -1) arr[idx] = item;
+          else arr.push(item);
+        });
+        cursors[name] = { srv: maxSrv, fullAt: prev.fullAt };
+      }
     });
-    saveLocalStore();
+    if (saveLocalStore()) {
+      try {
+        localStorage.setItem(ON_DEMAND_CURSORS_KEY, JSON.stringify(cursors));
+      } catch (e) {}
+    } else {
+      try {
+        localStorage.removeItem(ON_DEMAND_CURSORS_KEY);
+      } catch (e) {}
+    }
     const rerender = ON_DEMAND_RENDER[viewId];
     if (rerender) rerender();
   } catch (e) {
@@ -736,16 +1139,36 @@ async function saveToCloud(collectionName, docId, data, isDelete = false) {
 
   if (isFirebaseOnline && dbFirestore) {
     try {
+      const serverStamp =
+        firebase.firestore.FieldValue &&
+        firebase.firestore.FieldValue.serverTimestamp();
       if (isDelete) {
         await dbFirestore
           .collection(collectionName)
           .doc(String(docId))
           .delete();
+        // سجل الحذف: حتى يختفي المحذوف من كل الأجهزة (المزامنة بالتغييرات فقط)
+        if (collectionName !== "deletedTombstones" && serverStamp) {
+          await dbFirestore
+            .collection("deletedTombstones")
+            .doc(`${collectionName}__${String(docId)}`)
+            .set({
+              collection: collectionName,
+              docId: String(docId),
+              deletedAt: Date.now(),
+              [W_SERVER_STAMP_FIELD]: serverStamp,
+            });
+        }
       } else {
+        // ختم وقت من الخادم (نسخة من البيانات حتى لا يُضاف الحقل للنسخة المحلية)
+        const payload =
+          data && typeof data === "object" && !Array.isArray(data) && serverStamp
+            ? { ...data, [W_SERVER_STAMP_FIELD]: serverStamp }
+            : data;
         await dbFirestore
           .collection(collectionName)
           .doc(String(docId))
-          .set(data, { merge: true });
+          .set(payload, { merge: true });
       }
     } catch (e) {
       console.error(`❌ فشل الحفظ في السحابة [${collectionName}]:`, e);
