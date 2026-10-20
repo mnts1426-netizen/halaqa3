@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // النظام الجديد يعتمد على الحماية الداخلية (Pin Code Session) داخل التطبيق نفسه
+    // وتعمل السحابة كمخزن آمن ومزامن للبيانات (Data Sync Layer).
+    
+    // السماح بالقراءة والكتابة لجداول النظام المعتمدة لدينا:
+    
+    // 1. جدول المستخدمين (المدراء، المشرفين، المعلمين)
+    match /users/{document=**} {
+      allow read, write: if true; 
+    }
+
+    // 2. جدول الطلاب
+    match /students/{document=**} {
+      allow read, write: if true;
+    }
+
+    // 3. جدول الحلقات 
+    match /groups/{document=**} {
+      allow read, write: if true;
+    }
+
+    // 4. السجل اليومي الشامل (الحضور + التسميع + الملاحظات)
+    match /dailyRecords/{document=**} {
+      allow read, write: if true;
+    }
+
+    // 5. سجل العمليات الإدارية والمراقبة (Audit Logs)
+    match /auditLogs/{document=**} {
+      allow read, write: if true;
+    }
+
+    // 6. صندوق الرسائل الذكي
+    match /messages/{document=**} {
+      allow read, write: if true;
+    }
+
+    // 7. المسارات والمقررات (ما يضيفه أو يعدّله المدير)
+    match /tracks/{document=**} {
+      allow read, write: if true;
+    }
+
+    // إغلاق أي جداول أخرى غير مستخدمة لحماية قاعدة البيانات
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
