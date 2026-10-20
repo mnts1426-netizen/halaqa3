@@ -456,7 +456,7 @@ window.autoMigrateLocalDataToCloud = async function () {
 // meta/appVersion على Firestore ليطابق نفس القيمة. عندها أي جهاز
 // يشغّل نسخة قديمة سيكتشف ذلك فوراً (بدون انتظار) ويُعيد تحميل
 // الصفحة تلقائياً، فيحصل على آخر إصلاحات الكود دون أي تدخل يدوي.
-const APP_BUILD_VERSION = "2026-10-20-1";
+const APP_BUILD_VERSION = "2026-10-21-1";
 
 function watchForAppUpdates() {
   if (!dbFirestore) return;
@@ -544,6 +544,8 @@ function setupLegacyFullListeners() {
         (snapshot) => {
           // تجاهل الإشعار إذا كان التعديل قد صدر محلياً للتو لتفادي تكرار القراءة
           if (snapshot.metadata.hasPendingWrites) return;
+          // نسخة من ذاكرة الجهاز المؤقتة (لا اتصال بالخادم) قد تكون ناقصة: لا تُستبدل بها البيانات
+          if (snapshot.metadata.fromCache) return;
 
           if (!snapshot.empty) {
             const items = snapshot.docs.map((doc) => ({
@@ -599,10 +601,16 @@ function setupLegacyFullListeners() {
 // إن تعذّر أي شيء يرجع التطبيق تلقائياً لطريقة المزامنة السابقة كما كانت تماماً.
 // ==========================================================================
 const W_SERVER_STAMP_FIELD = "_srvAt";
-// V2: كل جهاز يعيد التحميل الكامل مرة واحدة بعد هذا التحديث، فتصل كل التعديلات التي سجّلتها
-// أجهزة كانت ما زالت تعمل بالنسخة القديمة (التي لا تضع ختم الخادم) وقت رفع التحديث السابق
-const W_SYNC_STATE_KEY = "HALAQAT_W_SYNC_STATE_V2";
-const W_OLD_SYNC_STATE_KEYS = ["HALAQAT_W_SYNC_STATE_V1", "HALAQAT_W_ONDEMAND_CURSORS_V1"];
+// V3: كل جهاز يعيد التحميل الكامل (من الخادم فقط) مرة واحدة بعد هذا التحديث. يصلح الأجهزة
+// التي حفظت نسخة ناقصة عندما كانت حصة القراءة منتهية (كانت النسخة الجزئية من ذاكرة الجهاز
+// المؤقتة تُعامَل كتحميل كامل)، ويوصل تعديلات الجوالات التي كانت على النسخة القديمة
+const W_SYNC_STATE_KEY = "HALAQAT_W_SYNC_STATE_V3";
+const W_OLD_SYNC_STATE_KEYS = [
+  "HALAQAT_W_SYNC_STATE_V1",
+  "HALAQAT_W_SYNC_STATE_V2",
+  "HALAQAT_W_ONDEMAND_CURSORS_V1",
+  "HALAQAT_W_ONDEMAND_CURSORS_V2",
+];
 // فترة انتقالية (أسبوع): متابعة تحضير وتسميع اليوم مباشرة بالتاريخ أيضاً، حتى تظهر فوراً
 // تسجيلات أي جوال لم يتحدّث بعد (النسخة القديمة لا تضع ختم الخادم)
 const W_TRANSITION_UNTIL = "2026-10-28";
@@ -653,7 +661,7 @@ function wClearSyncState() {
     localStorage.removeItem(ON_DEMAND_CURSORS_KEY_NAME);
   } catch (e) {}
 }
-const ON_DEMAND_CURSORS_KEY_NAME = "HALAQAT_W_ONDEMAND_CURSORS_V2";
+const ON_DEMAND_CURSORS_KEY_NAME = "HALAQAT_W_ONDEMAND_CURSORS_V3";
 try {
   W_OLD_SYNC_STATE_KEYS.forEach((k) => localStorage.removeItem(k));
 } catch (e) {}
@@ -743,7 +751,9 @@ async function wRunFullLoad() {
     const ref = W_DATE_SCOPED.includes(colName)
       ? dbFirestore.collection(colName).where("date", ">=", recentCutoffDate)
       : dbFirestore.collection(colName);
-    const snapshot = await ref.get();
+    // من الخادم فقط: عند انقطاع الاتصال أو نفاد حصة القراءة كانت get() تُرجع نسخة جزئية من
+    // ذاكرة الجهاز المؤقتة، فتُستبدل بها بيانات الجهاز الكاملة فتختفي سجلات
+    const snapshot = await ref.get({ source: "server" });
     let maxStamp = 0;
     snapshot.docs.forEach((d) => {
       const s = wStampMillis((d.data() || {})[W_SERVER_STAMP_FIELD]);
@@ -756,7 +766,9 @@ async function wRunFullLoad() {
       else window.appStore[colName] = items;
     }
   }
-  const tombSnap = await dbFirestore.collection("deletedTombstones").get();
+  const tombSnap = await dbFirestore
+    .collection("deletedTombstones")
+    .get({ source: "server" });
   let tombMax = 0;
   tombSnap.docs.forEach((d) => {
     const s = wStampMillis((d.data() || {})[W_SERVER_STAMP_FIELD]);
@@ -807,7 +819,9 @@ function wHandleChanges(colName, docs) {
     clearTimeout(wSpecialTimers[colName]);
     wSpecialTimers[colName] = setTimeout(async () => {
       try {
-        const snap = await dbFirestore.collection(colName).get();
+        const snap = await dbFirestore
+          .collection(colName)
+          .get({ source: "server" });
         if (!snap.empty) {
           wApplySpecial(colName, snap.docs.map(wDocToItem));
           saveLocalStore();
@@ -865,6 +879,7 @@ function wAttachLiveListeners(state) {
         },
         (error) => {
           console.warn(`تنبيه أثناء الاستماع لتغييرات (${colName}):`, error);
+          if (wIsServerUnreachable(error) && !wRetryTimer) wScheduleRetry(error);
         },
       );
     wLiveUnsubs.push(unsub);
@@ -915,6 +930,36 @@ function wAttachLiveListeners(state) {
   }, W_LIVE_RESTART_MS);
 }
 
+let wRetryTimer = null;
+
+// تعذّر الوصول للخادم أو نفدت حصة القراءة: تبقى بيانات الجهاز كما هي تماماً، وتُعاد المحاولة لاحقاً
+function wIsServerUnreachable(e) {
+  const code = e && e.code;
+  return (
+    code === "resource-exhausted" ||
+    code === "unavailable" ||
+    code === "deadline-exceeded"
+  );
+}
+
+function wScheduleRetry(e) {
+  clearTimeout(wRetryTimer);
+  const waitMs =
+    e && e.code === "resource-exhausted" ? 15 * 60 * 1000 : 2 * 60 * 1000;
+  wRetryTimer = setTimeout(() => {
+    wRetryTimer = null;
+    wStartCloudSync(false);
+  }, waitMs);
+}
+
+window.addEventListener("online", () => {
+  if (wRetryTimer) {
+    clearTimeout(wRetryTimer);
+    wRetryTimer = null;
+    wStartCloudSync(false);
+  }
+});
+
 async function wStartCloudSync(forceFull) {
   let state = wReadSyncState();
   try {
@@ -925,12 +970,20 @@ async function wStartCloudSync(forceFull) {
     wAttachLiveListeners(state);
     return true;
   } catch (e) {
+    wStopLiveListeners();
+    wLiveState = null;
+    if (wIsServerUnreachable(e)) {
+      console.warn(
+        "تعذّر الوصول للخادم الآن (انقطاع أو نفاد حصة القراءة): تبقى بيانات الجهاز كما هي وتُعاد المحاولة لاحقاً",
+        e,
+      );
+      wScheduleRetry(e);
+      return false;
+    }
     console.warn(
       "تعذّر تشغيل المزامنة بالتغييرات فقط، سيتم استخدام المزامنة السابقة:",
       e,
     );
-    wStopLiveListeners();
-    wLiveState = null;
     setupLegacyFullListeners();
     return false;
   }
@@ -994,8 +1047,8 @@ window.ensureFullAttendanceTasmeeaHistory = async function (sinceDate) {
       ? tasmCol.where("date", ">=", sinceDate)
       : tasmCol;
     const [attSnap, tasmSnap] = await Promise.all([
-      attQuery.get(),
-      tasmQuery.get(),
+      attQuery.get({ source: "server" }),
+      tasmQuery.get({ source: "server" }),
     ]);
     window.appStore.attendance = attSnap.docs.map((doc) => ({
       id: doc.id,
@@ -1063,7 +1116,7 @@ window.refreshOnDemandCollections = async function (viewId) {
           Date.now() - (c.fullAt || 0) > ON_DEMAND_FULL_EVERY_MS;
         const ref = dbFirestore.collection(name);
         const snap = full
-          ? await ref.get()
+          ? await ref.get({ source: "server" })
           : await ref
               .where(
                 W_SERVER_STAMP_FIELD,
@@ -1072,7 +1125,7 @@ window.refreshOnDemandCollections = async function (viewId) {
                   Math.max(0, (c.srv || 0) - W_LIVE_OVERLAP_MS),
                 ),
               )
-              .get();
+              .get({ source: "server" });
         return { name, snap, full, prev: c };
       }),
     );
